@@ -1,8 +1,7 @@
 name: CI
-on: {push: {branches: [main,master]}, pull_request: {branches: [main,master]}}
+on: [push, pull_request]
 jobs:
-  validate:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: test -f README.md && echo OK || echo missing
