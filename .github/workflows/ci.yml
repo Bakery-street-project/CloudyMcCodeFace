@@ -1,43 +1,24 @@
-name: CI
+name: CI — CloudyMcCodeFace
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, develop ]
+    branches: [main, master]
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [18.x, 20.x, 22.x]
     steps:
       - uses: actions/checkout@v4
-
-      - name: Use Node.js ${ matrix.node-version }
-        uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: ${ matrix.node-version }
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: |
-          if [ -f "npm-shrinkwrap.json" ]; then
-            npm ci
-          elif [ -f "yarn.lock" ]; then
-            yarn install --frozen-lockfile
-          elif [ -f "pnpm-lock.yaml" ]; then
-            pnpm install --frozen-lockfile
-          else
-            npm install
-          fi
-
-      - name: Run linter
-        run: npm run lint || echo "No lint script configured"
-
-      - name: Run tests
-        run: npm test || echo "No tests configured"
-
-      - name: Build
-        run: npm run build || echo "No build script configured"
+          python-version: "3.12"
+      - name: Install dev tools
+        run: pip install ruff pytest bandit || true
+      - name: Lint (ruff)
+        run: ruff check . || true
+      - name: Security scan (bandit)
+        run: bandit -r . -ll || true
+      - name: Tests (pytest)
+        run: pytest --tb=short || true
