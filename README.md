@@ -6,7 +6,10 @@ calls**. Its "intelligence" is deterministic: repository exploration, rules, par
 
 - Starts in ~0.1 s, uses ~25 MB RAM (plus whatever the repo's own tools use). No GPU.
 - Safe by default: plans and shows diffs; writes only with `--apply`, with backups and automatic revert of a
-  cycle that breaks a previously passing check.
+  cycle that breaks a previously passing check. Files the project's own tools create while checks run (for
+  example `Cargo.lock`) are reported separately.
+- Languages: Python, JavaScript/TypeScript (npm, pnpm, yarn, bun), Go and Rust, including monorepos with one
+  project per directory.
 - Smallest correct change: a rule only auto-fixes when the right edit is unambiguous; everything else is
   reported with its location for a human decision.
 

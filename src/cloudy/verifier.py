@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .editor import validate
 from .executor import CommandBlocked, Executor
-from .explorer import RepoProfile
+from .explorer import SKIP_DIRS, RepoProfile
 from .models import CheckResult, CommandResult
 
 INTENT_CATEGORIES = {
@@ -32,6 +32,7 @@ class Check:
     command: list[str] | str | None
     interpret: Callable[[CommandResult], CheckResult] | None = None
     skip_reason: str = ""
+    cwd: str | None = None
 
 
 @dataclass
@@ -93,6 +94,109 @@ def interpret_ruff(result: CommandResult) -> CheckResult:
     return base
 
 
+def _collect(result: CommandResult, name: str, category: str, patterns: list[re.Pattern],
+             summary: str | None = None) -> CheckResult:
+    """Generic result, with details replaced by the lines matching any pattern (first group if present)."""
+    base = generic(name, category)(result)
+    details = []
+    for line in result.output.splitlines():
+        for pattern in patterns:
+            if match := pattern.search(line):
+                details.append(" ".join(g for g in match.groups() if g) if match.groups() else line.strip())
+                break
+    if details:
+        base.details = list(dict.fromkeys(details))[:30]
+    if summary and base.failed:
+        base.summary = summary
+    return base
+
+
+JS_TEST_PATTERNS = [re.compile(p) for p in (
+    r"^\s*(not ok \d+ - .+)$",  # node:test / TAP
+    r"^\s*location: '(.+)'$",
+    r"^\s*(?:FAIL|✕|×)\s+(.+)$",  # jest / vitest
+    r"^\s*●\s+(.+)$",
+    r"^\s*((?:AssertionError|Error|TypeError|ReferenceError)\b.*)$",
+    r"^\s*((?:expected|actual|Expected|Received):?\s.*)$",
+)]
+
+
+def interpret_js_test(name: str) -> Callable[[CommandResult], CheckResult]:
+    return lambda result: _collect(result, name, "test", JS_TEST_PATTERNS)
+
+
+def interpret_eslint(result: CommandResult) -> CheckResult:
+    base = generic("eslint", "lint")(result)
+    try:
+        files = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return base
+    problems = [f"{f['filePath']}:{m.get('line', 0)} {m.get('ruleId') or 'error'} {m.get('message', '')}"
+                for f in files for m in f.get("messages", [])]
+    if problems:
+        base.summary, base.details = f"{len(problems)} problem(s)", problems[:30]
+    return base
+
+
+def interpret_prettier(result: CommandResult) -> CheckResult:
+    files = [line[7:].strip() for line in result.output.splitlines()
+             if line.startswith("[warn] ") and "Code style issues" not in line]
+    base = generic("prettier", "lint")(result)
+    if files:
+        base.summary, base.details = f"{len(files)} file(s) not formatted", files[:30]
+    return base
+
+
+def interpret_tsc(result: CommandResult) -> CheckResult:
+    return _collect(result, "tsc", "lint", [re.compile(r"^(\S+\(\d+,\d+\): error TS\d+: .*)$")])
+
+
+def interpret_gofmt(result: CommandResult) -> CheckResult:
+    files = [f for f in result.stdout.splitlines() if f and not set(Path(f).parts) & SKIP_DIRS]
+    base = generic("gofmt", "lint")(result)
+    if result.ok and files:
+        base.status, base.summary, base.details = "fail", f"{len(files)} file(s) not gofmt-formatted", files
+    elif result.ok:
+        base.summary = "all files formatted"
+    return base
+
+
+GO_PATTERNS = [re.compile(p) for p in (
+    r"^\s*(--- FAIL: \S+)",
+    r"^\s+(\S+\.go:\d+: .*)$",  # t.Errorf location + message
+    r"^(?:vet: )?(?:\./)?(\S+\.go:\d+:\d+: .*)$",  # vet / compile errors
+    r"^(panic: .*)$",
+    r"^(FAIL\s+\S+)",
+)]
+
+
+def interpret_go(name: str, category: str) -> Callable[[CommandResult], CheckResult]:
+    return lambda result: _collect(result, name, category, GO_PATTERNS)
+
+
+CARGO_PATTERNS = [re.compile(p) for p in (
+    r"^test (\S+) \.\.\. FAILED$",
+    r"panicked at (\S+:\d+:\d+):?$",
+    r"^\s*((?:left|right): .*)$",
+    r"^(assertion .* failed.*)$",
+    r"^(error(?:\[E\d+\])?: .*)$",
+    r"^\s*--> (\S+:\d+:\d+)$",
+    r"^(/?\S+\.rs)$",  # cargo fmt -l
+)]
+
+
+def interpret_cargo(name: str, category: str) -> Callable[[CommandResult], CheckResult]:
+    return lambda result: _collect(result, name, category, CARGO_PATTERNS)
+
+
+def _renamed(interpret: Callable[[CommandResult], CheckResult], name: str) -> Callable[[CommandResult], CheckResult]:
+    def run(result: CommandResult) -> CheckResult:
+        checked = interpret(result)
+        checked.name = name
+        return checked
+    return run
+
+
 def config_syntax(files: Iterable[str], read: Callable[[str], str | None]) -> CheckResult:
     errors = []
     for path in files:
@@ -111,14 +215,14 @@ def build_checks(profile: RepoProfile, custom: dict[str, str] | None = None) -> 
     python = "Python" in profile.languages
 
     def tool_check(name: str, category: str, tool: str, args: list[str], applies: bool,
-                   interpret: Callable[[CommandResult], CheckResult] | None = None) -> None:
+                   interpret: Callable[[CommandResult], CheckResult] | None = None, cwd: str | None = None) -> None:
         if not applies:
             return
         if not profile.has_tool(tool):
             checks.append(Check(name, category, None, skip_reason=f"`{tool}` is not installed"))
         else:
             checks.append(Check(name, category, [profile.tool_path(tool), *args],
-                                interpret or generic(name, category)))
+                                interpret or generic(name, category), cwd=cwd))
 
     tool_check("ruff", "lint", "ruff", ["check", "--no-cache", "--output-format=concise", "."],
                python and ("ruff" in profile.linters or "ruff" in profile.ci_tools or profile.has_tool("ruff")),
@@ -127,26 +231,63 @@ def build_checks(profile: RepoProfile, custom: dict[str, str] | None = None) -> 
     tool_check("pytest", "test", "pytest", ["-q", "-rfE", "--tb=short", "-p", "no:cacheprovider"],
                python or "pytest" in profile.ci_tools, interpret_pytest)
 
-    if "package.json" in profile.files:
-        root = Path(profile.root)
-        try:
-            package = json.loads((root / "package.json").read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            package = {}
-        declared = package.get("scripts", {}) if isinstance(package, dict) else {}
+    for project in profile.node_projects:
+        pm = project.package_manager
+        missing_modules = bool(project.deps) and not (Path(profile.root) / project.dir / "node_modules").is_dir()
         for script, category in (("lint", "lint"), ("test", "test")):
-            body = declared.get(script)
-            if not isinstance(body, str) or NPM_PLACEHOLDER_TEST in body:
+            body = project.scripts.get(script)
+            if body is None or NPM_PLACEHOLDER_TEST in body:
                 continue
-            if not (root / "node_modules").is_dir():
-                checks.append(Check(f"npm {script}", category, None,
-                                    skip_reason="node_modules missing; run `npm install` once while online"))
+            name = project.label(f"{pm} {script}")
+            if missing_modules:
+                checks.append(Check(name, category, None,
+                                    skip_reason=f"node_modules missing; run `{pm} install` once while online"))
+            elif not profile.has_tool(pm):
+                checks.append(Check(name, category, None, skip_reason=f"`{pm}` is not installed"))
             else:
-                tool_check(f"npm {script}", category, "npm", ["run", "--silent", script], True)
-    tool_check("tsc", "lint", "tsc", ["--noEmit"], "tsc" in profile.linters)
-    tool_check("go vet", "lint", "go", ["vet", "./..."], "go.mod" in profile.files)
-    tool_check("go test", "test", "go", ["test", "./..."], "go.mod" in profile.files)
-    tool_check("cargo test", "test", "cargo", ["test", "--offline", "--quiet"], "Cargo.toml" in profile.files)
+                checks.append(Check(name, category, [profile.tool_path(pm), "run", "--silent", script],
+                                    interpret_js_test(name) if category == "test" else generic(name, category),
+                                    cwd=project.cwd))
+        for tool, package, args, interpret, applies in (
+            ("eslint", "eslint", ["-f", "json", "."], interpret_eslint, "lint" not in project.scripts),
+            ("prettier", "prettier", ["--check", "."], interpret_prettier, True),
+            ("tsc", "typescript", ["--noEmit", "--pretty", "false"], interpret_tsc, True),
+        ):
+            if tool not in project.linters or not applies:
+                continue
+            name = project.label(tool)
+            path = profile.project_tool(project, tool, package)
+            if path:
+                checks.append(Check(name, "lint", [path, *args], _renamed(interpret, name), cwd=project.cwd))
+            else:
+                reason = (f"`{package}` is pinned in package.json but not installed; run `{pm} install` once while "
+                          "online") if package in project.deps else f"`{tool}` is not installed"
+                checks.append(Check(name, "lint", None, skip_reason=reason))
+
+    tool_check("gofmt", "lint", "gofmt", ["-l", "."], bool(profile.go_modules) or "Go" in profile.languages,
+               interpret_gofmt)
+    for module in profile.go_modules:
+        cwd = None if module == "." else module
+        vet, lint, test = (name if cwd is None else f"{module}: {name}"
+                           for name in ("go vet", "golangci-lint", "go test"))
+        tool_check(vet, "lint", "go", ["vet", "./..."], True, interpret_go(vet, "lint"), cwd)
+        has_config = any(f"{module}/{name}".removeprefix("./") in profile.files
+                         for name in (".golangci.yml", ".golangci.yaml", ".golangci.toml"))
+        tool_check(lint, "lint", "golangci-lint", ["run"], has_config, None, cwd)
+        tool_check(test, "test", "go", ["test", "./..."], True, interpret_go(test, "test"), cwd)
+
+    for crate in profile.cargo_roots:
+        cwd = None if crate == "." else crate
+        for name, helper, args, category in (
+            ("cargo fmt", "rustfmt", ["fmt", "--check", "--", "-l"], "lint"),
+            ("cargo clippy", "cargo-clippy", ["clippy", "--offline", "--quiet"], "lint"),
+            ("cargo test", None, ["test", "--offline"], "test"),
+        ):
+            name = name if crate == "." else f"{crate}: {name}"
+            if helper and not profile.has_tool(helper):
+                checks.append(Check(name, category, None, skip_reason=f"`{helper}` is not installed"))
+            else:
+                tool_check(name, category, "cargo", args, True, interpret_cargo(name, category), cwd)
     if "test" in profile.scripts.get("Makefile", []) and not any(c.category == "test" for c in checks):
         tool_check("make test", "test", "make", ["test"], True)
     for name, command in (custom or {}).items():
@@ -179,7 +320,10 @@ def run_checks(
             add(CheckResult(check.name, check.category, "skip", check.skip_reason))
             continue
         try:
-            add(check.interpret(executor.run(check.command)))
+            result = check.interpret(executor.run(check.command, cwd=check.cwd))
+            prefix = f"{profile.root}/"
+            result.details = [line.replace(prefix, "") for line in result.details]
+            add(result)
         except CommandBlocked as exc:
             add(CheckResult(check.name, check.category, "error", str(exc)))
     return verification

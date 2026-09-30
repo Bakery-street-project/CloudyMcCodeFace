@@ -10,7 +10,7 @@ from .models import Finding
 INTENT_PATTERNS = {
     "fix_ci": r"\bci\b|\bworkflows?\b|\bpipelines?\b|\bgithub actions\b|\bdependabot\b|\bcodeowners\b|\bconfig",
     "sync_docs": r"\breadme\b|\bdocs?\b|\bdocumentation\b|\bmatch(es)? reality\b|\blicen[cs]e\b|\bcontributing\b",
-    "fix_lint": r"\blint(s|er|ers|ing)?\b|\bruff\b|\bstyle\b|\bwarnings?\b",
+    "fix_lint": r"\blint(s|er|ers|ing)?\b|\bruff\b|\bstyle\b|\bwarnings?\b|\bformat(ting|ter)?\b|\bfmt\b",
     "fix_tests": r"\btests?\b|\bpytest\b|\bfailing\b|\bfailures?\b",
 }
 ANALYZE = r"\banaly[sz]|\bwhat tools\b|\bconventions?\b|\bexplore\b|\binspect\b|\bdescribe\b|\boverview\b|\baudit\b"

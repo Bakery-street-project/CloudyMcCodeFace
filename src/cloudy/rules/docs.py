@@ -23,6 +23,10 @@ HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 LINK = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
 FENCE = re.compile(r"^\s*(```|~~~)")
 SHELL_LANGS = {"", "bash", "sh", "shell", "console", "zsh", "shell-session"}
+# yarn/pnpm/bun subcommands that are not package.json scripts (`yarn build` runs the `build` script).
+PM_BUILTINS = {"install", "i", "add", "remove", "rm", "dlx", "exec", "create", "init", "why", "up", "upgrade",
+               "update", "info", "run", "test", "start", "link", "unlink", "outdated", "list", "ls", "audit",
+               "publish", "pack", "config", "cache", "global", "import", "set", "workspace", "workspaces", "x"}
 
 
 def section(lines: list[str], title: re.Pattern) -> tuple[int, int] | None:
@@ -195,12 +199,14 @@ class PhantomCommands(Rule):
             return ctx.exists(str(cwd / rel))
 
         tool, args = tokens[0], tokens[1:]
-        if tool in ("npm", "yarn", "pnpm"):
+        if tool in ("npm", "yarn", "pnpm", "bun"):
             if not has("package.json"):
                 return "no package.json"
             scripts = self._package_scripts(ctx, cwd)
             script = args[1] if args[:1] == ["run"] and len(args) > 1 else args[0] if args[:1] in (
                 ["start"], ["test"]) else None
+            if tool != "npm" and args and not args[0].startswith("-") and args[0] not in PM_BUILTINS:
+                script = args[0]
             if script and script not in scripts and not (script == "start" and has("server.js")):
                 return f"no `{script}` script in package.json"
         elif tool in ("pip", "pip3") and args[:1] == ["install"]:

@@ -38,10 +38,12 @@ MANIFESTS = {
 LINTER_FILES = {
     "ruff.toml": "ruff", ".ruff.toml": "ruff", ".flake8": "flake8", "mypy.ini": "mypy", ".mypy.ini": "mypy",
     ".pylintrc": "pylint", "tsconfig.json": "tsc", ".golangci.yml": "golangci-lint",
-    ".golangci.yaml": "golangci-lint", "rustfmt.toml": "rustfmt", "clippy.toml": "clippy",
+    ".golangci.yaml": "golangci-lint", ".golangci.toml": "golangci-lint", "rustfmt.toml": "rustfmt",
+    ".rustfmt.toml": "rustfmt", "clippy.toml": "clippy",
     ".pre-commit-config.yaml": "pre-commit", ".shellcheckrc": "shellcheck", ".editorconfig": "editorconfig",
 }
-LINTER_PREFIXES = {".eslintrc": "eslint", "eslint.config.": "eslint", ".prettierrc": "prettier"}
+LINTER_PREFIXES = {".eslintrc": "eslint", "eslint.config.": "eslint", ".prettierrc": "prettier",
+                   "prettier.config.": "prettier"}
 PYPROJECT_TOOLS = ("ruff", "mypy", "black", "isort", "pylint", "pytest", "coverage", "bandit")
 
 CI_PATTERNS = (
@@ -54,17 +56,21 @@ TEST_PATTERNS = (
 
 LANG_TOOLS = {
     "Python": ("python3", "pytest", "ruff", "mypy"),
-    "JavaScript": ("node", "npm", "eslint"),
-    "TypeScript": ("node", "npm", "tsc", "eslint"),
-    "Go": ("go",),
-    "Rust": ("cargo",),
+    "JavaScript": ("node", "npm", "eslint", "prettier"),
+    "TypeScript": ("node", "npm", "tsc", "eslint", "prettier"),
+    "Go": ("go", "gofmt", "golangci-lint"),
+    "Rust": ("cargo", "rustfmt", "cargo-clippy"),
     "Shell": ("shellcheck",),
 }
 KNOWN_TOOLS = frozenset({
     "python3", "pytest", "ruff", "mypy", "bandit", "black", "flake8", "pylint", "isort", "node", "npm",
-    "yarn", "pnpm", "eslint", "prettier", "tsc", "go", "golangci-lint", "cargo", "make", "shellcheck",
-    "pre-commit",
+    "yarn", "pnpm", "bun", "eslint", "prettier", "tsc", "jest", "vitest", "go", "gofmt", "golangci-lint",
+    "cargo", "rustfmt", "cargo-clippy", "make", "shellcheck", "pre-commit",
 })
+VERSION_ARGS = {"go": ("version",), "gofmt": None}  # None: no version flag; presence is enough
+LOCKFILES = {"pnpm-lock.yaml": "pnpm", "yarn.lock": "yarn", "bun.lockb": "bun", "bun.lock": "bun",
+             "package-lock.json": "npm"}
+JS_TEST_RUNNERS = ("jest", "vitest", "mocha", "ava")
 
 LICENSES = (  # ordered: more specific texts first
     ("MIT", "permission is hereby granted, free of charge"),
@@ -93,6 +99,22 @@ class ToolInfo:
 
 
 @dataclass
+class NodeProject:
+    dir: str  # repo-relative directory of package.json; "." for the root
+    package_manager: str = "npm"
+    deps: list[str] = field(default_factory=list)
+    scripts: dict[str, str] = field(default_factory=dict)
+    linters: dict[str, str] = field(default_factory=dict)  # eslint/prettier/tsc -> repo-relative config file
+
+    @property
+    def cwd(self) -> str | None:
+        return None if self.dir == "." else self.dir
+
+    def label(self, name: str) -> str:
+        return name if self.dir == "." else f"{self.dir}: {name}"
+
+
+@dataclass
 class RepoProfile:
     root: str
     files: list[str] = field(default_factory=list, repr=False)
@@ -105,6 +127,10 @@ class RepoProfile:
     linters: dict[str, str] = field(default_factory=dict)
     scripts: dict[str, list[str]] = field(default_factory=dict)
     tools: dict[str, ToolInfo] = field(default_factory=dict)
+    node_projects: list[NodeProject] = field(default_factory=list)
+    go_modules: list[str] = field(default_factory=list)
+    cargo_roots: list[str] = field(default_factory=list)
+    test_runners: list[str] = field(default_factory=list)
     license: str | None = None
     docs: list[str] = field(default_factory=list)
     git: dict = field(default_factory=dict)
@@ -122,8 +148,19 @@ class RepoProfile:
         info = self.tools.get(name)
         return info.path if info and info.path else name
 
+    def project_tool(self, project: NodeProject, name: str, package: str | None = None) -> str | None:
+        """Path to a JS tool. If package.json pins it, only the project's own install counts, never a global one."""
+        for base in (Path(self.root) / project.dir, Path(self.root)):  # workspaces hoist bins to the root
+            local = base / "node_modules" / ".bin" / name
+            if local.is_file():
+                return str(local)
+        if (package or name) in project.deps:
+            return None
+        return self.tools[name].path if self.has_tool(name) else None
+
     def to_dict(self) -> dict:
-        data = {key: value for key, value in vars(self).items() if key not in ("files", "tools")}
+        data = {key: value for key, value in vars(self).items() if key not in ("files", "tools", "node_projects")}
+        data["node_projects"] = [vars(p) for p in self.node_projects]
         data["tools"] = {name: {"path": t.path, "version": t.version} for name, t in self.tools.items()}
         data["file_count"] = len(self.files)
         return data
@@ -156,13 +193,86 @@ def _read(root: Path, rel: str) -> str:
         return ""
 
 
+def read_package(root: Path, rel: str = "package.json") -> dict:
+    """Parsed package.json, or {} when it is missing or invalid."""
+    try:
+        data = json.loads((root / rel).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _package_manager(package: dict, files: list[str]) -> str:
+    declared = str(package.get("packageManager", "")).split("@", 1)[0]
+    if declared in ("npm", "pnpm", "yarn", "bun"):
+        return declared
+    return next((pm for lock, pm in LOCKFILES.items() if lock in files), "npm")
+
+
+def _dirs_with(files: list[str], name: str) -> list[str]:
+    return [str(PurePosixPath(f).parent) for f in files if PurePosixPath(f).name == name]
+
+
+def _config_in(files: set[str], directory: str, names: tuple[str, ...], prefixes: tuple[str, ...] = (),
+               inherit: bool = True) -> str | None:
+    """Config file for a tool in `directory`, or (if the tool searches upward) in one of its ancestors."""
+    here = PurePosixPath(directory)
+    for base in (here, *here.parents) if inherit else (here,):
+        for f in sorted(files):
+            path = PurePosixPath(f)
+            if path.parent == base and (path.name in names or path.name.startswith(prefixes)):
+                return f
+    return None
+
+
+def _node_projects(root: Path, files: list[str]) -> list[NodeProject]:
+    present = set(files)
+    root_package = read_package(root)
+    workspace = "workspaces" in root_package or "pnpm-workspace.yaml" in present
+    projects = []
+    for directory in _dirs_with(files, "package.json"):
+        package = read_package(root, str(PurePosixPath(directory) / "package.json"))
+        local = [str(PurePosixPath(directory) / name) for name in LOCKFILES]
+        scripts = package.get("scripts", {})
+        project = NodeProject(
+            dir=directory,
+            package_manager=_package_manager(package, [Path(p).name for p in local if p in present]
+                                             or [name for name in LOCKFILES if name in present]),
+            deps=sorted({name for source in ((package, root_package) if workspace else (package,))
+                         for key in ("dependencies", "devDependencies")
+                         if isinstance(source.get(key), dict) for name in source[key]}),
+            scripts={k: str(v) for k, v in scripts.items()} if isinstance(scripts, dict) else {},
+        )
+        for tool, names, prefixes, key in (("eslint", (), (".eslintrc", "eslint.config."), "eslintConfig"),
+                                           ("prettier", (), (".prettierrc", "prettier.config."), "prettier")):
+            if key in package:
+                project.linters[tool] = str(PurePosixPath(directory) / "package.json")
+            elif config := _config_in(present, directory, names, prefixes):
+                project.linters[tool] = config
+        if config := _config_in(present, directory, ("tsconfig.json",), inherit=False):
+            project.linters["tsc"] = config
+        projects.append(project)
+    return projects
+
+
+def _test_runners(profile: RepoProfile) -> list[str]:
+    runners = []
+    for project in profile.node_projects:
+        runners += [project.label(name) for name in JS_TEST_RUNNERS if name in project.deps]
+        if "node --test" in project.scripts.get("test", ""):
+            runners.append(project.label("node:test"))
+    if any(f.endswith(".py") for f in profile.test_files):
+        runners.append("pytest")
+    runners += [f"go test ({d})" if d != "." else "go test" for d in profile.go_modules]
+    runners += [f"cargo test ({d})" if d != "." else "cargo test" for d in profile.cargo_roots]
+    return runners
+
+
 def _scripts(root: Path, files: list[str]) -> dict[str, list[str]]:
     scripts: dict[str, list[str]] = {}
     if "package.json" in files:
-        try:
-            scripts["package.json"] = sorted(json.loads(_read(root, "package.json")).get("scripts", {}))
-        except (json.JSONDecodeError, AttributeError):
-            scripts["package.json"] = []
+        declared = read_package(root).get("scripts", {})
+        scripts["package.json"] = sorted(declared) if isinstance(declared, dict) else []
     if "Makefile" in files:
         targets = re.findall(r"^([A-Za-z0-9_.-]+)\s*:(?!=)", _read(root, "Makefile"), re.M)
         scripts["Makefile"] = sorted({t for t in targets if not t.startswith(".")})
@@ -183,6 +293,10 @@ def _linters(root: Path, files: list[str]) -> dict[str, str]:
             (tool for prefix, tool in LINTER_PREFIXES.items() if name.startswith(prefix)), None)
         if tool and "/" not in rel:
             linters.setdefault(tool, rel)
+    package = read_package(root)
+    for key, tool in (("eslintConfig", "eslint"), ("prettier", "prettier")):
+        if key in package:
+            linters.setdefault(tool, "package.json")
     if "pyproject.toml" in files:
         try:
             configured = tomllib.loads(_read(root, "pyproject.toml")).get("tool", {})
@@ -219,7 +333,10 @@ def probe_tool(executor: Executor, name: str) -> ToolInfo:
     path = executor.which(name)
     if not path:
         return ToolInfo(name, None)
-    result = executor.run([path, "--version"], timeout=15)
+    args = VERSION_ARGS.get(name, ("--version",))
+    if args is None:
+        return ToolInfo(name, path)
+    result = executor.run([path, *args], timeout=15)
     text = (result.stdout or result.stderr).strip()
     return ToolInfo(name, path, text.splitlines()[0][:80] if result.ok and text else None)
 
@@ -252,10 +369,22 @@ def explore(root: str | Path, executor: Executor) -> RepoProfile:
         wanted.update(LANG_TOOLS.get(lang, ()))
     if "pip" in profile.ecosystems:
         wanted.update(LANG_TOOLS["Python"])
-    if "npm" in profile.ecosystems:
-        wanted.update(("node", "npm"))
     if "Makefile" in files:
         wanted.add("make")
+    profile.node_projects = _node_projects(root, files)
+    for project in profile.node_projects:
+        wanted.update(("node", project.package_manager, *project.linters))
+        for tool, config in project.linters.items():
+            profile.linters.setdefault(tool, config)
+    profile.go_modules = _dirs_with(files, "go.mod")
+    cargo_dirs = _dirs_with(files, "Cargo.toml")
+    profile.cargo_roots = [d for d in cargo_dirs
+                           if not any(str(parent) in cargo_dirs for parent in PurePosixPath(d).parents)]
+    if profile.go_modules:
+        wanted.update(LANG_TOOLS["Go"])
+    if profile.cargo_roots:
+        wanted.update(LANG_TOOLS["Rust"])
+    profile.test_runners = _test_runners(profile)
     with ThreadPoolExecutor(max_workers=8) as pool:
         infos = pool.map(lambda name: probe_tool(executor, name), sorted(wanted))
     profile.tools = {info.name: info for info in infos}

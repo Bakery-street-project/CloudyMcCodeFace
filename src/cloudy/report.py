@@ -51,7 +51,12 @@ class RichReporter(Reporter):
         table.add_row("Manifests", escape(", ".join(p.manifests) or "none"))
         table.add_row("CI", escape(", ".join(p.ci_files) or "none")
                       + (f"  (uses: {escape(', '.join(p.ci_tools))})" if p.ci_tools else ""))
-        table.add_row("Tests", f"{len(p.test_files)} file(s)" if p.test_files else "none found")
+        tests = f"{len(p.test_files)} file(s)" if p.test_files else "none found"
+        table.add_row("Tests", escape(tests + (f"; runners: {', '.join(p.test_runners)}" if p.test_runners else "")))
+        projects = [f"{n.dir} ({n.package_manager}, {len(n.deps)} deps)" for n in p.node_projects]
+        projects += [f"{d} (go)" for d in p.go_modules] + [f"{d} (cargo)" for d in p.cargo_roots]
+        if projects:
+            table.add_row("Projects", escape(", ".join(projects)))
         table.add_row("Linters", escape(", ".join(f"{k} ({v})" for k, v in p.linters.items()) or "none configured"))
         if any(p.scripts.values()):
             table.add_row("Scripts", escape("; ".join(f"{k}: {', '.join(v)}" for k, v in p.scripts.items() if v)))
@@ -112,6 +117,9 @@ class RichReporter(Reporter):
             self.console.print("Verify yourself:")
             for command in (["git diff"] if changed else []) + list(dict.fromkeys(commands)):
                 self.console.print(f"  {escape(command)}")
+        if data.get("tool_side_effects"):
+            self.console.print("Created or changed by the project's own tools, not by cloudy: "
+                               + escape(", ".join(data["tool_side_effects"])))
         if data.get("backup_dir"):
             self.console.print(f"Backups: {escape(data['backup_dir'])}")
         self.console.print(f"Session log: {escape(data['session_file'])}", style="dim")

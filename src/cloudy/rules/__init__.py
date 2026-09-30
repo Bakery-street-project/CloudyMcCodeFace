@@ -50,13 +50,28 @@ class Rule:
         return Finding(self.id, path, message, line, fixable)
 
 
+def pipe_through(ctx: RepoContext, argv: list[str], path: str, *, cwd: str | None = None,
+                 ok_codes: tuple[int, ...] = (0,)) -> str | None:
+    """Feed a file's current content to a formatter/fixer on stdin; return stdout when it is a real change."""
+    source = ctx.read(path)
+    if source is None:
+        return None
+    result = ctx.executor.run(argv, stdin=source, cwd=cwd)
+    if result.exit_code not in ok_codes or not result.stdout or result.stdout == source:
+        return None
+    return result.stdout
+
+
 def all_rules() -> list[Rule]:
     """All rules in the order fixes are applied (config before docs before code)."""
-    from . import ci, docs, python, repo
+    from . import ci, docs, go, javascript, python, repo, rust
 
     return [
         ci.MaskedFailures(), ci.WorkflowPermissions(), ci.DependabotEcosystems(), repo.CodeOwners(),
+        javascript.Lockfiles(), go.GoModule(), rust.CrateEdition(),
         docs.LicenseMismatch(), docs.CloneUrl(), docs.BrokenLinks(), docs.PhantomCommands(),
         docs.PlaceholderContacts(), docs.DuplicatePolicies(),
         python.RuffAutofix(), python.PytestPythonPath(),
+        javascript.ScriptTools(), javascript.EslintAutofix(), javascript.PrettierFormat(),
+        go.Gofmt(), rust.Rustfmt(),
     ]

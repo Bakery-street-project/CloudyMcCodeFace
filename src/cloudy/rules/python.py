@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 
 from ..editor import validate
-from . import RepoContext, Rule
+from . import RepoContext, Rule, pipe_through
 
 MISSING_MODULE = re.compile(r"ModuleNotFoundError: No module named '([\w.]+)'")
 
@@ -43,17 +43,11 @@ class RuffAutofix(Rule):
     def fix(self, ctx: RepoContext):
         changes = {}
         for path in sorted({d["path"] for d in ruff_diagnostics(ctx) if d["fix"]}):
-            source = ctx.read(path)
-            if source is None:
-                continue
-            result = ctx.executor.run(
-                [ctx.profile.tool_path("ruff"), "check", "--no-cache", "--fix", "--stdin-filename", path, "-"],
-                stdin=source,
-            )
             # ruff prints the fixed source on stdout (exit 1 means diagnostics remain, which is fine).
-            if result.exit_code in (0, 1) and result.stdout and result.stdout != source \
-                    and not validate(path, result.stdout):
-                changes[path] = result.stdout
+            fixed = pipe_through(ctx, [ctx.profile.tool_path("ruff"), "check", "--no-cache", "--fix",
+                                       "--stdin-filename", path, "-"], path, ok_codes=(0, 1))
+            if fixed and not validate(path, fixed):
+                changes[path] = fixed
         return changes
 
 

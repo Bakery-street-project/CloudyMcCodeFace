@@ -42,14 +42,27 @@ class Orchestrator:
 
     def run(self, task: str) -> Session:
         session = Session(task, self.root, "apply" if self.apply else "safe", self.state_dir)
+        self._git_baseline: tuple[Executor, list[str]] | None = None
         try:
             self._run(task, session)
         except KeyboardInterrupt:
             session.finish("interrupted", "stopped by user; applied edits are backed up in the session")
             raise
         finally:
+            self._record_side_effects(session)
             session.save()
         return session
+
+    def _record_side_effects(self, session: Session) -> None:
+        """Files the project's own tools created or changed during the run (e.g. Cargo.lock), not cloudy's edits."""
+        if not self._git_baseline:
+            return
+        executor, before = self._git_baseline
+        status = executor.run(["git", "status", "--porcelain"], timeout=30)
+        if status.ok:
+            edited = {e.path for e in session.edits if e.applied}
+            changed = {line[3:] for line in status.stdout.splitlines()} - {line[3:] for line in before}
+            session.data["tool_side_effects"] = sorted(changed - edited)
 
     def _run(self, task: str, session: Session) -> None:
         intents = classify(task)
@@ -64,6 +77,8 @@ class Orchestrator:
         self.reporter.phase(f"Explore  ({', '.join(intents)})")
         profile = explore(self.root, executor)
         session.data["profile"] = profile.to_dict()
+        if profile.git:
+            self._git_baseline = (executor, profile.git["dirty"])
         step.status = "done"
         self.reporter.profile(profile)
 

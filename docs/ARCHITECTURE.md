@@ -14,6 +14,8 @@ reproduced: the same repository state and task always produce the same plan, edi
 | Delegate to the project's tools | Lint fixes come from `ruff --fix` on stdin, so the project's own config decides; nothing is reimplemented. |
 | Whole-file edits validated by parsers | `ast` / `tomllib` / `json` / `yaml` reject an edit that would break syntax. libcst is not required. |
 | JSON session files outside the repo | Inspectable with any editor, no DB, never pollutes `git status`. |
+| Checks run per project directory | Each `package.json`, `go.mod` and top-level `Cargo.toml` is a project; its checks and fixes run in its directory, so monorepos are covered, not silently skipped. |
+| Pinned JS tools only from the project | If package.json declares eslint/prettier/typescript, only the project's `node_modules` copy is used; a different global version could reformat everything. |
 | Offline environment for commands | Package managers are forced offline, so a run never fetches anything. |
 
 ## Components
@@ -43,10 +45,10 @@ task ──► Planner.classify ──► intents
 | Module | Agent | Responsibility |
 |---|---|---|
 | `planner.py` | Orchestrator / Planner | Task → intents (regex rules). Findings → ordered fix steps; skips a rule whose findings did not change after its last attempt (re-planning without loops). |
-| `explorer.py` | Explorer | Walks the tree (skips vendored/build dirs, 20k file cap), detects languages, manifests, CI, tests, linter configs, scripts, license, git state and commit style. Probes every relevant tool with `--version`; never assumes one exists. |
+| `explorer.py` | Explorer | Walks the tree (skips vendored/build dirs, 20k file cap), detects languages, manifests, CI, tests, linter configs, scripts, license, git state and commit style. Records projects: Node (package manager from `packageManager`/lockfile, dependencies incl. workspace root, scripts, eslint/prettier/tsc config), Go modules, Cargo roots. Probes every relevant tool (`--version`, or `VERSION_ARGS`); never assumes one exists. |
 | `editor.py` | Editor | Proposes edits into an overlay (so dry-run proposals chain), renders unified diffs, validates syntax, applies atomically keeping file mode and newline style, refuses stale edits and paths outside the repo, reverts. |
 | `executor.py` | Executor | argv or bash commands in the repo root only; timeouts kill the whole process group; output clipped; minimal allow-listed environment; deny-list for destructive commands (`git push`, `sudo`, `rm -rf /`, `curl | sh`, …). A guard rail, not a sandbox. |
-| `verifier.py` | Verifier | Builds checks from the profile (ruff, mypy, pytest, npm lint/test, tsc, go vet/test, cargo test, make test, custom). Missing tool ⇒ `skip`, never a guess. Interprets output (pytest failures with file:line, ruff diagnostics, pytest exit 5 = no tests). |
+| `verifier.py` | Verifier | Builds checks from the profile, per project directory: ruff, mypy, pytest; `<pm> lint`/`<pm> test`, eslint, prettier, tsc; gofmt, go vet, golangci-lint (if configured), go test; cargo fmt, cargo clippy, cargo test (`--offline`); make test; custom. Missing tool or uninstalled dependencies ⇒ `skip` with the reason, never a guess. Interprets output into `file:line` details (pytest, node:test/jest/vitest, tsc, eslint JSON, go test/vet, cargo panics and compile errors). |
 | `rules/` | Rule system | Deterministic checks and fixes, grouped by intent. |
 | `state.py` | Memory | Session JSON: task, intents, plan steps and statuses, every command with exit code and duration, every verification, findings, edits with before/after SHA-256 and diff; backups per session. |
 | `orchestrator.py` | Orchestrator | The loop above; safe vs apply mode; rollback on regression; final status. |
@@ -74,7 +76,10 @@ src/cloudy/
     repo.py         CODEOWNERS
     docs.py         license mismatch, clone URL, broken links, phantom commands, placeholders, duplicates
     python.py       ruff autofix, pytest src-layout pythonpath
-tests/              unit tests per agent + end-to-end runs on fixture repos
+    javascript.py   lockfiles, script tools, eslint autofix, prettier
+    go.py           go.mod presence, gofmt
+    rust.py         crate edition, rustfmt
+tests/              unit tests per agent and language + end-to-end runs on fixture repos (incl. a polyglot monorepo)
 ```
 
 ## Rule catalogue
@@ -92,6 +97,14 @@ tests/              unit tests per agent + end-to-end runs on fixture repos
 | `docs.placeholders`, `docs.duplicate-policies` | sync_docs | Report only. |
 | `python.ruff-autofix` | fix_lint | ruff's safe fixes via stdin, per file, shown as diffs first. |
 | `python.pytest-pythonpath` | fix_tests | When pytest fails with `ModuleNotFoundError` for a package under `src/`, adds `pythonpath = ["src"]` to `[tool.pytest.ini_options]`. |
+| `js.eslint-autofix` | fix_lint | The project's eslint (`--fix-dry-run --stdin`, JSON `output`), only when an eslint config exists. |
+| `js.prettier` | fix_lint | The project's Prettier (`--stdin-filepath`), only when a Prettier config exists. |
+| `js.lockfiles` | fix_ci, fix_tests | Report only: several lockfiles, `packageManager` vs lockfile, `npm ci` / frozen installs without the lockfile. |
+| `js.script-tools` | fix_tests, fix_lint | Report only: scripts calling eslint/tsc/jest/vitest/… not declared as dependencies; npm placeholder `test` script while test files exist. |
+| `go.gofmt` | fix_lint | `gofmt` via stdin (no configuration exists, so the result is unambiguous); skips vendor/ and testdata/; syntax errors are reported. |
+| `go.module` | fix_ci, fix_tests, fix_lint | Report only: Go files without any go.mod. |
+| `rust.rustfmt` | fix_lint | Files listed by `cargo fmt --check -- -l`, piped through `rustfmt --edition <crate edition> --emit stdout` in the crate directory (so rustfmt.toml applies). |
+| `rust.edition` | fix_ci, fix_lint | Report only: `[package]` without `edition` (Cargo falls back to 2015; changing it can change semantics). |
 
 Test failures that no recipe covers (real logic bugs) are localised (`FAILED node — reason`, `at file:line in fn`)
 and left for a human. Without a model the agent cannot know intended behaviour, and it does not pretend to.
@@ -117,11 +130,36 @@ edits. On a small Python repo with a src-layout import error, an unused import a
 `--apply` cycle adds the pytest `pythonpath`, applies ruff's fix, re-runs pytest and stops with `needs_human`,
 pointing at the failing assertion instead of guessing a code change.
 
+### Polyglot monorepo (JS in `web/`, Go in `svc/`, a Rust crate at the root)
+
+Each language has an unformatted file, a lint issue and a genuine logic bug (`sub` returns `a + b`); CI masks
+failures with `|| true`. `agent --apply "fix the CI, docs, formatting and the failing tests"`:
+
+```
+edits   ci.masked-failures, ci.workflow-permissions   .github/workflows/ci.yml
+        js.eslint-autofix   web/src/greeting.js   var greeting → const greeting
+        js.prettier         web/src/calc.js       formatted
+        go.gofmt            svc/calc.go           formatted
+        rust.rustfmt        src/lib.rs            formatted
+checks  pass web: eslint, web: prettier, gofmt, svc: go vet, cargo fmt, cargo clippy
+        fail web: npm test   not ok 2 - sub · web/test/calc.test.js:9:1
+        fail svc: go test    calc_test.go:7: Sub(5, 3) = 8, want 2
+        fail cargo test      tests::subtracts · src/lib.rs:15:9 · left: 8 / right: 2
+manual  `npm ci` fails without package-lock.json · README `npm run build`: no `build` script in web/package.json
+Status: needs_human
+```
+
+The three `sub` bugs are located, not "fixed". A second run makes no edits. The earlier safe-mode run reported
+`Cargo.lock` as created by cargo itself.
+
 ## Running on a lightweight desktop
 
 - Any machine with Python 3.11+; no GPU, no background service. Idle cost is zero: it is a CLI, not a daemon.
 - Memory is dominated by the checks the repo already has (pytest, tsc, cargo). Use `timeout` in `cloudy.toml`
   and `--max-cycles 1` to bound slow suites; add `deny` patterns for anything that must never run.
+- Safe mode never edits files, but checks run the project's own tools, which may write build output
+  (`target/`, `Cargo.lock`, caches). Anything they create or change in the git working tree is listed in the
+  summary as a tool side effect, separate from cloudy's own edits.
 - Offline use: install dev dependencies (`npm install`, `pip install -e .[dev]`, `go mod download`) once while
   online; checks whose dependencies are missing are reported as `skip` with the reason.
 - Developed and tested on Linux; macOS should behave the same. Windows is untested (string commands need bash,
@@ -133,8 +171,18 @@ pointing at the failing assertion instead of guessing a code change.
   `Finding`s (mark `fixable=True` only for unambiguous cases) and `fix()` returning `{path: new_text}`.
   Register it in `all_rules()`; its position there is its fix order. Rules can read `ctx.checks` to react to
   verifier output.
-- **New language / verifier**: add extensions to `LANGUAGES`, tools to `LANG_TOOLS` in `explorer.py`, and a
-  `tool_check(...)` line in `verifier.build_checks` with an interpreter that turns output into `details`.
+- **New language / verifier**: a language is four small pieces, no new architecture:
+  1. *Explorer*: extensions in `LANGUAGES`, tools in `LANG_TOOLS` (plus `VERSION_ARGS` when a tool has no
+     `--version`), manifest names in `MANIFESTS`, config files in `LINTER_FILES`.
+  2. *Verifier*: a `tool_check(...)` line in `verifier.build_checks` per real project command, with an
+     interpreter that turns output into `details` (`file:line` locations; absolute repo paths are made relative
+     automatically).
+  3. *Rules*: a `rules/<language>.py` module registered in `all_rules()`. Formatters follow the stdin pattern:
+     detect with the tool's own check/list mode, fix by piping each file through the tool on stdin and handing
+     stdout to the Editor, so the diff is shown before anything is written. Use `project_tool()` so a tool the
+     project pins in its manifest is only run from the project's install, never from a different global version.
+  4. *Tests*: detection, one safe fix, and one logic bug that must end as `needs_human`.
+
   Per-repo checks need no code: `checks = { name = "command" }`.
 - **Structured edits**: for refactors beyond whole-file rewrites, a rule can use `libcst` (Python) or
   `ts-morph` via `node` (TypeScript) inside `fix()`; the Editor still validates, diffs and backs up the result.
