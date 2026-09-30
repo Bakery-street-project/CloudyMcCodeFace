@@ -1,17 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: "javascript"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-  - package-ecosystem: "go"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-  - package-ecosystem: "python"
-    directory: "/"
-    schedule:
-      interval: "weekly"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

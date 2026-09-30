@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [main, master]
 
+permissions:
+  contents: read
+
 jobs:
   quality:
     runs-on: ubuntu-latest
@@ -15,10 +18,11 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install dev tools
-        run: pip install ruff pytest bandit || true
+        run: pip install ruff pytest bandit
       - name: Lint (ruff)
-        run: ruff check . || true
+        run: ruff check .
       - name: Security scan (bandit)
-        run: bandit -r . -ll || true
+        run: bandit -r . -ll
       - name: Tests (pytest)
-        run: pytest --tb=short || true
+        # Exit code 5 means no tests were collected; treat as success until tests exist.
+        run: pytest --tb=short || [ $? -eq 5 ]

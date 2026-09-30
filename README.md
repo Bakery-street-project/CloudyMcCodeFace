@@ -2,52 +2,25 @@
 
 Privacy-First AI Coding Assistant
 
-## Vision
+## Status
 
-To effectively analyze and suggest the best direction for "bakery-street-project/CloudyMcCodeFace," follow these steps:
+Early setup: the repository currently contains project configuration and documentation only. No application code has been added yet.
 
-## Features
+## Getting Started
 
-- Developed in **TypeScript**
-- Well-structured and maintainable codebase
-- Integration ready for development workflows
-- Comprehensive documentation
-- Core functionality includes development tools, integration capabilities, and automation features.
-
-## Quick Start
-
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-
-### Installation
 ```bash
-git clone https://github.com/bakery-street-project/CloudyMcCodeFace.cd CloudyMcCodeFace
+git clone https://github.com/Bakery-street-project/CloudyMcCodeFace.git
 cd CloudyMcCodeFace
-npm install
-# or: yarn install
-```
-
-### Usage
-```bash
-# Start development
-npm start
-
-# Run tests
-npm test
-
-# Build for production
-npm run build
 ```
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to this project.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Proprietary — all rights reserved. See [LICENSE](LICENSE).
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) for security policy information.
+See [SECURITY.md](SECURITY.md).

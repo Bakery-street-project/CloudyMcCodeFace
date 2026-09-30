@@ -9,7 +9,7 @@ This repository is currently in its initial setup phase with only GitHub configu
 ## Working Effectively
 
 ### Initial Repository Setup
-- Clone repository: `git clone https://github.com/Bakery-street-projct/CloudyMcCodeFace.git`
+- Clone repository: `git clone https://github.com/Bakery-street-project/CloudyMcCodeFace.git`
 - Navigate to repository: `cd CloudyMcCodeFace`
 - Check current state: `git --no-pager status`
 - View repository structure: `ls -la`
@@ -36,7 +36,7 @@ When JavaScript code is added to this repository:
 
 #### Go Projects
 When Go code is added to this repository:
-- Initialize Go module: `go mod init github.com/Bakery-street-projct/CloudyMcCodeFace`
+- Initialize Go module: `go mod init github.com/Bakery-street-project/CloudyMcCodeFace`
 - Download dependencies: `go mod download` -- typically takes 2-5 minutes. NEVER CANCEL. Set timeout to 15+ minutes.
 - Build project: `go build` -- build time varies by project size. NEVER CANCEL. Set timeout to 30+ minutes for large projects.
 - Run tests: `go test ./...` -- test time varies by test suite size. NEVER CANCEL. Set timeout to 20+ minutes.
@@ -99,10 +99,16 @@ Since this repository supports multiple languages, when code is added:
 ### Current Files
 ```
 .github/
+├── workflows/ci.yml    # CI: ruff, bandit, pytest
 ├── CODEOWNERS          # Code ownership definitions
 ├── FUNDING.yml         # Funding configuration
-├── SECURITY.md         # Security policy
+├── copilot-instructions.md
 └── dependabot.yml      # Dependency update configuration
+.gitignore
+CONTRIBUTING.md
+LICENSE                 # Proprietary, all rights reserved
+README.md
+SECURITY.md             # Security policy
 ```
 
 ### Expected Structure (when code is added)
@@ -111,7 +117,6 @@ Since this repository supports multiple languages, when code is added:
 ├── workflows/          # GitHub Actions workflows
 ├── CODEOWNERS
 ├── FUNDING.yml
-├── SECURITY.md
 └── dependabot.yml
 
 src/                    # Source code directory
@@ -127,11 +132,8 @@ README.md               # Project documentation
 ## Important Configuration Files
 
 ### Dependabot Configuration
-The repository is configured for automatic dependency updates for:
-- JavaScript (weekly updates)
-- Go (weekly updates) 
-- Python (weekly updates)
-- GitHub Actions (weekly updates)
+The repository is configured for weekly automatic dependency updates for GitHub Actions.
+When a language manifest is added, add the matching ecosystem (`npm`, `gomod`, or `pip`) to `.github/dependabot.yml`.
 
 ### Code Ownership
 - Primary maintainer: BoozeLee
@@ -177,11 +179,11 @@ When the repository grows to include release workflows:
 
 ## Security Considerations
 
-- Follow security policy outlined in `.github/SECURITY.md`
+- Follow security policy outlined in `SECURITY.md`
 - Never commit secrets or sensitive information
 - Use environment variables for configuration
 - Regularly update dependencies through dependabot
-- Report security vulnerabilities to security@example.com
+- Report security vulnerabilities to security@bakery-street-project.dev
 
 ## Troubleshooting
 
