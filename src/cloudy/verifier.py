@@ -55,12 +55,24 @@ def _tail(text: str, lines: int = 12) -> list[str]:
     return [line for line in text.strip().splitlines()[-lines:] if line.strip()]
 
 
+HINTS = {
+    "test": "A test fails: compare the assertion's expected value with the code under test at the first location. "
+            "cloudy never changes application logic.",
+    "lint": "No safe autofix covers this: fix the reported lines by hand, then re-run the check.",
+    "static": "Fix the syntax at the reported location.",
+    "timeout": "The command timed out: raise `timeout` in cloudy.toml or run it manually to see where it hangs.",
+    "missing": "The tool could not start: install it or set its path under [tools] in cloudy.toml.",
+}
+
+
 def generic(name: str, category: str) -> Callable[[CommandResult], CheckResult]:
     def interpret(result: CommandResult) -> CheckResult:
         status = "pass" if result.ok else "error" if result.timed_out or result.exit_code in (126, 127) else "fail"
         summary = "ok" if result.ok else f"exit {result.exit_code}" + (" (timed out)" if result.timed_out else "")
+        hint = "" if result.ok else HINTS["timeout"] if result.timed_out else HINTS["missing"] \
+            if result.exit_code in (126, 127) else HINTS.get(category, "")
         return CheckResult(name, category, status, summary, result.cmd,
-                           [] if result.ok else _tail(result.output), result.output[-4000:])
+                           [] if result.ok else _tail(result.output), result.output[-4000:], hint)
     return interpret
 
 
@@ -206,23 +218,29 @@ def config_syntax(files: Iterable[str], read: Callable[[str], str | None]) -> Ch
                 errors.append(f"{path}: {error}")
     return CheckResult("config-syntax", "static", "fail" if errors else "pass",
                        f"{len(errors)} invalid file(s)" if errors else "all YAML/JSON/TOML files parse",
-                       "(built-in)", errors)
+                       "(built-in)", errors, hint=HINTS["static"] if errors else "")
 
 
-def build_checks(profile: RepoProfile, custom: dict[str, str] | None = None) -> list[Check]:
+def command_check(profile: RepoProfile, name: str, category: str, tool: str, args: list[str],
+                  interpret: Callable[[CommandResult], CheckResult] | None = None, cwd: str | None = None) -> Check:
+    """A check running `tool args` (in `cwd`); skipped with a reason when the tool is not installed.
+
+    This is the helper plugins use from their `checks(profile)` function.
+    """
+    if not profile.has_tool(tool):
+        return Check(name, category, None, skip_reason=f"`{tool}` is not installed")
+    return Check(name, category, [profile.tool_path(tool), *args], interpret or generic(name, category), cwd=cwd)
+
+
+def build_checks(profile: RepoProfile, custom: dict[str, str] | None = None, registry=None) -> list[Check]:
     """Checks the project already supports. A missing tool yields a skipped check, never a guess."""
     checks: list[Check] = []
     python = "Python" in profile.languages
 
     def tool_check(name: str, category: str, tool: str, args: list[str], applies: bool,
                    interpret: Callable[[CommandResult], CheckResult] | None = None, cwd: str | None = None) -> None:
-        if not applies:
-            return
-        if not profile.has_tool(tool):
-            checks.append(Check(name, category, None, skip_reason=f"`{tool}` is not installed"))
-        else:
-            checks.append(Check(name, category, [profile.tool_path(tool), *args],
-                                interpret or generic(name, category), cwd=cwd))
+        if applies:
+            checks.append(command_check(profile, name, category, tool, args, interpret, cwd))
 
     tool_check("ruff", "lint", "ruff", ["check", "--no-cache", "--output-format=concise", "."],
                python and ("ruff" in profile.linters or "ruff" in profile.ci_tools or profile.has_tool("ruff")),
@@ -290,6 +308,8 @@ def build_checks(profile: RepoProfile, custom: dict[str, str] | None = None) -> 
                 tool_check(name, category, "cargo", args, True, interpret_cargo(name, category), cwd)
     if "test" in profile.scripts.get("Makefile", []) and not any(c.category == "test" for c in checks):
         tool_check("make test", "test", "make", ["test"], True)
+    if registry is not None:
+        checks.extend(registry.checks(profile))
     for name, command in (custom or {}).items():
         category = "test" if "test" in name else "lint"
         checks.append(Check(name, category, command, generic(name, category)))

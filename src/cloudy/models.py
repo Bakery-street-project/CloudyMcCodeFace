@@ -46,6 +46,7 @@ class Finding:
     message: str
     line: int | None = None
     fixable: bool = False
+    hint: str = ""  # what a human should look at when this is not auto-fixable
 
     @property
     def location(self) -> str:
@@ -75,6 +76,7 @@ class CheckResult:
     command: str = ""
     details: list[str] = field(default_factory=list)
     output: str = ""
+    hint: str = ""
 
     @property
     def failed(self) -> bool:

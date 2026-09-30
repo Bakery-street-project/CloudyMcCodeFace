@@ -39,6 +39,7 @@ class CrateEdition(Rule):
     id = "rust.edition"
     intents = frozenset({"fix_ci", "fix_lint"})
     summary = "Crates should state their edition; without it Cargo silently uses 2015"
+    hint = "Add `edition = \"2015\"` to keep behaviour, or migrate with `cargo fix --edition` and review."
 
     def check(self, ctx: RepoContext):
         findings = []
@@ -91,3 +92,6 @@ class Rustfmt(Rule):
             if formatted := pipe_through(ctx, argv, path, cwd=None if directory == "." else directory):
                 changes[path] = formatted
         return changes
+
+
+RULES = [CrateEdition(), Rustfmt()]

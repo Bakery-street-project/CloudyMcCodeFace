@@ -18,6 +18,7 @@ class CodeOwners(Rule):
     id = "repo.codeowners"
     intents = frozenset({"fix_ci"})
     summary = "CODEOWNERS lines need a path pattern followed by @owners"
+    hint = "Write `<pattern> @user-or-team` on that line."
 
     def _fixed_line(self, ctx: RepoContext, line: str) -> tuple[str | None, str | None]:
         """Return (problem, fixed line or None if not safely fixable)."""
@@ -60,3 +61,6 @@ class CodeOwners(Rule):
             lines[index] = fixed + "\n"
             changes[path] = "".join(lines)
         return changes
+
+
+RULES = [CodeOwners()]

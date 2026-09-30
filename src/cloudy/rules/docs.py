@@ -170,6 +170,7 @@ class BrokenLinks(Rule):
     id = "docs.broken-links"
     intents = frozenset({"sync_docs"})
     summary = "Relative links in docs must point at files that exist inside the repository"
+    hint = "Create the target, fix the path, or replace the link with an absolute URL."
 
     def check(self, ctx: RepoContext):
         findings = []
@@ -193,6 +194,7 @@ class PhantomCommands(Rule):
     id = "docs.phantom-commands"
     intents = frozenset({"sync_docs"})
     summary = "Commands shown in docs must be runnable in this repository"
+    hint = "Update the docs to the commands the project really has, or add the missing script/file."
 
     def _problem(self, ctx: RepoContext, cwd: PurePosixPath, tokens: list[str]) -> str | None:
         def has(rel: str) -> bool:
@@ -270,6 +272,7 @@ class PlaceholderContacts(Rule):
     id = "docs.placeholders"
     intents = frozenset({"sync_docs"})
     summary = "Docs and config must not ship placeholder contacts"
+    hint = "Replace with a real, monitored address or remove the line."
 
     PATTERN = re.compile(r"[\w.+-]+@example\.(?:com|org|net)|https?://(?:www\.)?example\.(?:com|org|net)\S*")
 
@@ -286,6 +289,7 @@ class DuplicatePolicies(Rule):
     id = "docs.duplicate-policies"
     intents = frozenset({"sync_docs"})
     summary = "Community files present in several locations drift apart; GitHub displays only one"
+    hint = "Merge the copies into one location and delete the others."
 
     NAMES = ("SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SUPPORT.md")
 
@@ -298,3 +302,7 @@ class DuplicatePolicies(Rule):
                 findings.append(self.finding(copies[0], f"{name} exists in {', '.join(copies)} with different "
                                                         "content; keep one"))
         return findings
+
+
+RULES = [LicenseMismatch(), CloneUrl(), BrokenLinks(), PhantomCommands(), PlaceholderContacts(),
+         DuplicatePolicies()]

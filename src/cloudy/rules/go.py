@@ -16,6 +16,7 @@ class GoModule(Rule):
     id = "go.module"
     intents = frozenset({"fix_ci", "fix_tests", "fix_lint"})
     summary = "Go code needs a go.mod for `go build`, `go vet` and `go test` to run"
+    hint = "Run `go mod init <module path>` with the module's real import path."
 
     def check(self, ctx: RepoContext):
         if _go_files(ctx) and not ctx.match("go.mod", "*/go.mod"):
@@ -51,3 +52,6 @@ class Gofmt(Rule):
             if formatted := pipe_through(ctx, [ctx.profile.tool_path("gofmt")], path):
                 changes[path] = formatted
         return changes
+
+
+RULES = [GoModule(), Gofmt()]

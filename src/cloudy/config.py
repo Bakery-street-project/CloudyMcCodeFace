@@ -10,9 +10,13 @@ DEFAULTS: dict = {
     "timeout": 300.0,  # seconds per command
     "max_cycles": 3,  # fix -> verify iterations in apply mode
     "deny": [],  # extra regexes for commands that must never run
-    "disabled_rules": [],  # rule ids to skip
+    "disabled_rules": [],  # rule ids to skip, e.g. "docs.placeholders"
+    "disabled_groups": [],  # rule groups to skip: the id prefix, e.g. "docs", "js", "ci"
     "checks": {},  # extra checks: name = "shell command"
+    "tools": {},  # tool name -> executable (absolute, ~ or repo-relative), overriding PATH discovery
+    "ignore": [],  # fnmatch patterns (repo-relative); ignored files are never analysed or edited
     "env_passthrough": [],  # extra environment variables passed to commands
+    "clean_tool_files": False,  # delete untracked files the project's tools created during a run
 }
 
 
@@ -55,11 +59,14 @@ def load_config(root: str | Path) -> dict:
         fail("timeout must be a positive number of seconds")
     if not isinstance(config["max_cycles"], int) or not 1 <= config["max_cycles"] <= 10:
         fail("max_cycles must be an integer between 1 and 10")
-    for key in ("deny", "disabled_rules", "env_passthrough"):
+    for key in ("deny", "disabled_rules", "disabled_groups", "ignore", "env_passthrough"):
         if not isinstance(config[key], list) or not all(isinstance(v, str) for v in config[key]):
             fail(f"{key} must be a list of strings")
-    if not isinstance(config["checks"], dict) or not all(isinstance(v, str) for v in config["checks"].values()):
-        fail("checks must be a table of name = \"command\"")
+    for key in ("checks", "tools"):
+        if not isinstance(config[key], dict) or not all(isinstance(v, str) for v in config[key].values()):
+            fail(f"{key} must be a table of name = \"string\"")
+    if not isinstance(config["clean_tool_files"], bool):
+        fail("clean_tool_files must be true or false")
     for pattern in config["deny"]:
         try:
             re.compile(pattern)

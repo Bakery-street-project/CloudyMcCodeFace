@@ -6,9 +6,9 @@ import sys
 import pytest
 from conftest import LEGACY_REPO
 
-from cloudy import orchestrator as orchestrator_module
 from cloudy.cli import main
 from cloudy.orchestrator import Orchestrator
+from cloudy.plugins import Plugin, Registry
 from cloudy.rules import Rule
 
 
@@ -91,15 +91,16 @@ class BreakingRule(Rule):
 
 
 @pytest.mark.skipif(not shutil.which("pytest"), reason="needs pytest")
-def test_cycle_that_regresses_is_reverted(make_repo, tmp_path, monkeypatch):
+def test_cycle_that_regresses_is_reverted(make_repo, tmp_path):
     files = PY_REPO | {
         "pyproject.toml": PY_REPO["pyproject.toml"] + '\n[tool.pytest.ini_options]\npythonpath = ["src"]\n',
         "tests/test_ops.py": "from calc.ops import add\n\n\ndef test_add():\n    assert add(1, 2) == 3\n",
     }
     root = make_repo(files)
     original = (root / "src/calc/ops.py").read_text()
-    monkeypatch.setattr(orchestrator_module, "all_rules", lambda: [BreakingRule()])
-    data = run(root, "fix the tests", tmp_path, apply=True)
+    registry = Registry([Plugin("breaking", "user", [BreakingRule()])])
+    orchestrator = Orchestrator(root, apply=True, state_dir=tmp_path / "state", registry=registry)
+    data = orchestrator.run("fix the tests").to_dict()
     assert data["status"] == "needs_human" and "reverted" in data["message"]
     assert (root / "src/calc/ops.py").read_text() == original
     assert any(s["status"] == "reverted" for s in data["plan"])

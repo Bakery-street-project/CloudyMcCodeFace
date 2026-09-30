@@ -50,6 +50,7 @@ class MaskedFailures(Rule):
     id = "ci.masked-failures"
     intents = frozenset({"fix_ci"})
     summary = "CI steps whose failures are swallowed by `|| true` can never fail the build"
+    hint = "Decide whether the step may fail; if not, drop the mask. `continue-on-error` needs a stated reason."
 
     def check(self, ctx: RepoContext):
         findings = []
@@ -93,6 +94,7 @@ class WorkflowPermissions(Rule):
     id = "ci.workflow-permissions"
     intents = frozenset({"fix_ci"})
     summary = "Workflows without a `permissions:` block get the repository's default (often write) token"
+    hint = "Add the narrowest `permissions:` the jobs need (e.g. `contents: write` only for release jobs)."
 
     def check(self, ctx: RepoContext):
         findings = []
@@ -170,6 +172,7 @@ class DependabotEcosystems(Rule):
     id = "ci.dependabot-ecosystems"
     intents = frozenset({"fix_ci"})
     summary = "Dependabot entries must use valid ecosystem names and point at existing manifests"
+    hint = "Use a documented package-ecosystem name, or remove the entry."
 
     def _plan(self, ctx: RepoContext, path: str):
         """Yield (entry, finding message, replacement ecosystem or None to drop, fixable)."""
@@ -216,3 +219,6 @@ class DependabotEcosystems(Rule):
             return any(ENTRY.match(line) for line in text.splitlines())
         data = yaml.safe_load(text) or {}
         return bool(data.get("updates"))
+
+
+RULES = [MaskedFailures(), WorkflowPermissions(), DependabotEcosystems()]

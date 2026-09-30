@@ -134,6 +134,7 @@ class RepoProfile:
     license: str | None = None
     docs: list[str] = field(default_factory=list)
     git: dict = field(default_factory=dict)
+    ignore: list[str] = field(default_factory=list)
     truncated: bool = False
 
     @property
@@ -166,13 +167,22 @@ class RepoProfile:
         return data
 
 
-def walk(root: Path) -> tuple[list[str], bool]:
+def is_ignored(path: str, patterns: list[str] | tuple[str, ...]) -> bool:
+    """fnmatch-style: `*` also matches `/`, so `generated/*` covers everything below generated/."""
+    return any(fnmatch(path, pattern) or fnmatch(f"{path}/", pattern) for pattern in patterns)
+
+
+def walk(root: Path, ignore: list[str] | tuple[str, ...] = ()) -> tuple[list[str], bool]:
     files: list[str] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.endswith(".egg-info"))
         rel_dir = PurePosixPath(Path(dirpath).relative_to(root).as_posix())
+        dirnames[:] = sorted(d for d in dirnames if d not in SKIP_DIRS and not d.endswith(".egg-info")
+                             and not is_ignored(str(rel_dir / d), ignore))
         for name in sorted(filenames):
-            files.append(str(rel_dir / name) if str(rel_dir) != "." else name)
+            rel = str(rel_dir / name) if str(rel_dir) != "." else name
+            if is_ignored(rel, ignore):
+                continue
+            files.append(rel)
             if len(files) >= MAX_FILES:
                 return files, True
     return files, False
@@ -329,11 +339,11 @@ def _git(executor: Executor) -> dict:
     }
 
 
-def probe_tool(executor: Executor, name: str) -> ToolInfo:
-    path = executor.which(name)
+def probe_tool(executor: Executor, name: str, version_args: dict | None = None, path: str | None = None) -> ToolInfo:
+    path = path or executor.which(name)
     if not path:
         return ToolInfo(name, None)
-    args = VERSION_ARGS.get(name, ("--version",))
+    args = (version_args or VERSION_ARGS).get(name, ("--version",))
     if args is None:
         return ToolInfo(name, path)
     result = executor.run([path, *args], timeout=15)
@@ -341,16 +351,29 @@ def probe_tool(executor: Executor, name: str) -> ToolInfo:
     return ToolInfo(name, path, text.splitlines()[0][:80] if result.ok and text else None)
 
 
-def explore(root: str | Path, executor: Executor) -> RepoProfile:
-    root = Path(root).resolve()
-    files, truncated = walk(root)
-    profile = RepoProfile(root=str(root), files=files, truncated=truncated)
+def _resolve_tool(root: Path, value: str) -> str | None:
+    """A configured tool path (absolute, ~, or repo-relative) if it is an executable file, else None."""
+    path = Path(value).expanduser()
+    path = path if path.is_absolute() else root / path
+    return str(path) if path.is_file() and os.access(path, os.X_OK) else None
 
-    counts = Counter(LANGUAGES[suffix] for f in files if (suffix := PurePosixPath(f).suffix.lower()) in LANGUAGES)
+
+def explore(root: str | Path, executor: Executor, registry=None, *, ignore: list[str] | tuple[str, ...] = (),
+            tool_paths: dict[str, str] | None = None) -> RepoProfile:
+    """Map the repository. `registry` adds plugin languages/tools; `tool_paths` pins tools to explicit paths."""
+    root = Path(root).resolve()
+    languages = LANGUAGES | (registry.merged("languages") if registry else {})
+    manifests = MANIFESTS | (registry.merged("manifests") if registry else {})
+    lang_tools = LANG_TOOLS | (registry.merged("lang_tools") if registry else {})
+    version_args = VERSION_ARGS | (registry.merged("version_args") if registry else {})
+    files, truncated = walk(root, ignore)
+    profile = RepoProfile(root=str(root), files=files, truncated=truncated, ignore=list(ignore))
+
+    counts = Counter(languages[suffix] for f in files if (suffix := PurePosixPath(f).suffix.lower()) in languages)
     profile.languages = dict(counts.most_common())
-    profile.manifests = [f for f in files if PurePosixPath(f).name in MANIFESTS
+    profile.manifests = [f for f in files if PurePosixPath(f).name in manifests
                          or fnmatch(PurePosixPath(f).name, "requirements*.txt")]
-    profile.ecosystems = sorted({MANIFESTS.get(PurePosixPath(f).name, "pip") for f in profile.manifests})
+    profile.ecosystems = sorted({manifests.get(PurePosixPath(f).name, "pip") for f in profile.manifests})
     profile.ci_files = [f for f in files if any(fnmatch(f, p) for p in CI_PATTERNS)]
     profile.test_files = [f for f in files if any(fnmatch(PurePosixPath(f).name, p) for p in TEST_PATTERNS)
                           or fnmatch(f, "tests/*.rs")]
@@ -366,7 +389,7 @@ def explore(root: str | Path, executor: Executor) -> RepoProfile:
 
     wanted = {"git"} | set(profile.linters) & KNOWN_TOOLS | set(profile.ci_tools)
     for lang in profile.code_languages:
-        wanted.update(LANG_TOOLS.get(lang, ()))
+        wanted.update(lang_tools.get(lang, ()))
     if "pip" in profile.ecosystems:
         wanted.update(LANG_TOOLS["Python"])
     if "Makefile" in files:
@@ -385,8 +408,13 @@ def explore(root: str | Path, executor: Executor) -> RepoProfile:
     if profile.cargo_roots:
         wanted.update(LANG_TOOLS["Rust"])
     profile.test_runners = _test_runners(profile)
+    pinned = {name: _resolve_tool(root, value) for name, value in (tool_paths or {}).items()}
+    wanted.update(pinned)
     with ThreadPoolExecutor(max_workers=8) as pool:
-        infos = pool.map(lambda name: probe_tool(executor, name), sorted(wanted))
+        infos = pool.map(lambda name: probe_tool(executor, name, version_args, pinned.get(name)), sorted(wanted))
     profile.tools = {info.name: info for info in infos}
+    for name, path in pinned.items():
+        if path is None:
+            profile.tools[name] = ToolInfo(name, None)
     profile.git = _git(executor)
     return profile

@@ -88,3 +88,6 @@ class PytestPythonPath(Rule):
         else:
             new = text.rstrip("\n") + f'\n\n{header}\npythonpath = ["src"]\n'
         return {"pyproject.toml": new}
+
+
+RULES = [RuffAutofix(), PytestPythonPath()]

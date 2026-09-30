@@ -21,9 +21,11 @@ from .models import CommandResult
 DEFAULT_DENY = (
     r"\bsudo\b",
     r"\bsu\s+-?\w*\s*$",
-    r"\bgit\s+push\b",
-    r"\bgit\s+reset\s+--hard\b",
-    r"\bgit\s+clean\b",
+    # git: anything that publishes, rewrites history or drops work. Commits go through cloudy.git only.
+    r"\bgit\s+(push|reset|clean|rebase|restore|filter-branch|filter-repo|update-ref|gc|prune|reflog)\b",
+    r"\bgit\s+checkout\s+(-f\b|--\s|\.)",
+    r"\bgit\s+(stash\s+(drop|clear)|branch\s+-[dDfM]\b|tag\s+-d\b|worktree\s+remove|rm\b|mv\b)",
+    r"\bgit\s+commit\b.*--(amend|no-verify)\b",
     r"\brm\s+-\w*[rf]\w*\s+(/|~|\$HOME)(\s|$)",
     r"\b(curl|wget)\b[^|]*\|\s*(ba|z)?sh\b",
     r"\bmkfs\b",
@@ -36,7 +38,8 @@ DEFAULT_DENY = (
 ENV_KEEP = (
     "PATH", "HOME", "USER", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TMPDIR", "SHELL",
     "VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONPATH", "GOPATH", "GOCACHE", "GOROOT", "CARGO_HOME",
-    "RUSTUP_HOME", "NODE_PATH", "SSL_CERT_FILE", "SYSTEMROOT",
+    "RUSTUP_HOME", "NODE_PATH", "SSL_CERT_FILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "APPDATA", "LOCALAPPDATA",
+    "USERPROFILE", "TEMP", "TMP",
 )
 
 # Keep package managers from reaching the network; everything must work from what is installed.
@@ -82,10 +85,16 @@ class Executor:
         self._env = build_env(env_passthrough)
 
     def which(self, name: str) -> str | None:
-        local = self.root / "node_modules" / ".bin" / name
-        if local.is_file() and os.access(local, os.X_OK):
-            return str(local)
+        local_bin = self.root / "node_modules" / ".bin"
+        if local_bin.is_dir() and (local := shutil.which(name, path=str(local_bin))):  # honours PATHEXT on Windows
+            return local
         return shutil.which(name, path=self._env.get("PATH"))
+
+    def shell(self) -> list[str]:
+        """bash when available (also Git Bash on Windows), else cmd.exe on Windows, else /bin/sh."""
+        if bash := self.which("bash"):
+            return [bash, "-c"]
+        return ["cmd.exe", "/d", "/c"] if os.name == "nt" else ["/bin/sh", "-c"]
 
     def ensure_allowed(self, command: str) -> None:
         for pattern in self._deny:
@@ -102,8 +111,7 @@ class Executor:
     ) -> CommandResult:
         """Run an argv list directly, or a string through bash. Never raises for command failures."""
         if isinstance(cmd, str):
-            shell = self.which("bash") or "/bin/sh"
-            argv, display = [shell, "-c", cmd], cmd
+            argv, display = [*self.shell(), cmd], cmd
         else:
             argv = [str(part) for part in cmd]
             display = shlex.join(argv)
@@ -123,7 +131,8 @@ class Executor:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                start_new_session=True,
+                start_new_session=os.name != "nt",
+                creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) if os.name == "nt" else 0,
             )
         except OSError as exc:
             code = 127 if isinstance(exc, FileNotFoundError) else 126
@@ -162,7 +171,12 @@ class Executor:
 
 
 def _kill(proc: subprocess.Popen) -> None:
+    """Kill the command and everything it started."""
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)  # nosec B603 B607
+        proc.kill()
+        return
     try:
         os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-    except (AttributeError, ProcessLookupError, PermissionError):
+    except (ProcessLookupError, PermissionError):
         proc.kill()

@@ -38,6 +38,7 @@ class Rule:
     id: str = ""
     intents: frozenset[str] = frozenset()
     summary: str = ""
+    hint: str = ""  # default suggestion attached to this rule's report-only findings
 
     def check(self, ctx: RepoContext) -> list[Finding]:
         raise NotImplementedError
@@ -46,8 +47,9 @@ class Rule:
         """Return {path: new_content} for fixable findings. Default: nothing is auto-fixable."""
         return {}
 
-    def finding(self, path: str, message: str, line: int | None = None, fixable: bool = False) -> Finding:
-        return Finding(self.id, path, message, line, fixable)
+    def finding(self, path: str, message: str, line: int | None = None, fixable: bool = False,
+                hint: str | None = None) -> Finding:
+        return Finding(self.id, path, message, line, fixable, self.hint if hint is None else hint)
 
 
 def pipe_through(ctx: RepoContext, argv: list[str], path: str, *, cwd: str | None = None,
@@ -63,15 +65,7 @@ def pipe_through(ctx: RepoContext, argv: list[str], path: str, *, cwd: str | Non
 
 
 def all_rules() -> list[Rule]:
-    """All rules in the order fixes are applied (config before docs before code)."""
-    from . import ci, docs, go, javascript, python, repo, rust
+    """Built-in rules in fix order (each module's RULES, modules in plugins.BUILTIN_MODULES order)."""
+    from ..plugins import builtin_plugins
 
-    return [
-        ci.MaskedFailures(), ci.WorkflowPermissions(), ci.DependabotEcosystems(), repo.CodeOwners(),
-        javascript.Lockfiles(), go.GoModule(), rust.CrateEdition(),
-        docs.LicenseMismatch(), docs.CloneUrl(), docs.BrokenLinks(), docs.PhantomCommands(),
-        docs.PlaceholderContacts(), docs.DuplicatePolicies(),
-        python.RuffAutofix(), python.PytestPythonPath(),
-        javascript.ScriptTools(), javascript.EslintAutofix(), javascript.PrettierFormat(),
-        go.Gofmt(), rust.Rustfmt(),
-    ]
+    return [rule for plugin in builtin_plugins() for rule in plugin.rules]

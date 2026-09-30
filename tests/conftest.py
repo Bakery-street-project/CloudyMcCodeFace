@@ -78,7 +78,13 @@ def git_init(root: Path, remote: str | None = REMOTE) -> None:
     if remote:
         run("remote", "add", "origin", remote)
     run("add", "-A")
-    run("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "chore: init")
+    run("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "chore: init")
+
+
+@pytest.fixture(autouse=True)
+def isolated_user_config(tmp_path, monkeypatch):
+    """Never load plugins from the developer's real ~/.config/cloudy during tests."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg-config"))
 
 
 @pytest.fixture

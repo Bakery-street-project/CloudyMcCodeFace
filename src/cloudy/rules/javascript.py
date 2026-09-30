@@ -57,6 +57,7 @@ class Lockfiles(Rule):
     id = "js.lockfiles"
     intents = frozenset({"fix_ci", "fix_tests"})
     summary = "One package manager per project, and CI installs must match its lockfile"
+    hint = "Pick one package manager, delete the other lockfiles, and commit the remaining one."
 
     def check(self, ctx: RepoContext):
         findings = []
@@ -111,6 +112,7 @@ class ScriptTools(Rule):
     id = "js.script-tools"
     intents = frozenset({"fix_tests", "fix_lint"})
     summary = "package.json scripts must use tools the project declares, and a real test script when tests exist"
+    hint = "Add the tool to devDependencies (so CI installs it) or change the script."
 
     def check(self, ctx: RepoContext):
         findings = []
@@ -223,3 +225,6 @@ class PrettierFormat(Rule):
                 if formatted := pipe_through(ctx, argv, path, cwd=project.cwd):
                     changes[path] = formatted
         return changes
+
+
+RULES = [Lockfiles(), ScriptTools(), EslintAutofix(), PrettierFormat()]
