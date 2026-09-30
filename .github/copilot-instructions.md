@@ -4,7 +4,7 @@ Always reference these instructions first and fallback to search or bash command
 
 ## Current Repository State
 
-This repository is currently in its initial setup phase with only GitHub configuration files. It is configured to support multi-language development including JavaScript/Node.js, Go, Python, and GitHub Actions.
+This repository contains `cloudy`, an offline, model-free coding agent written in Python 3.11+ (`src/cloudy/`, tests in `tests/`). Setup: `pip install -e ".[dev]"`; checks: `ruff check . && bandit -r . -ll && pytest`. See `docs/ARCHITECTURE.md`. Never add language-model or network API code.
 
 ## Working Effectively
 
@@ -104,9 +104,13 @@ Since this repository supports multiple languages, when code is added:
 ├── FUNDING.yml         # Funding configuration
 ├── copilot-instructions.md
 └── dependabot.yml      # Dependency update configuration
+docs/ARCHITECTURE.md    # Design, rule catalogue, extension guide
+src/cloudy/             # Agent package (orchestrator, planner, explorer, editor, executor, verifier, rules/)
+tests/                  # pytest suite
 .gitignore
 CONTRIBUTING.md
 LICENSE                 # Proprietary, all rights reserved
+pyproject.toml          # Package metadata, ruff and pytest config
 README.md
 SECURITY.md             # Security policy
 ```
