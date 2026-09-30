@@ -61,7 +61,7 @@ class CloudyApp(App):
     #diffs { height: 2fr; }
     #git { height: 1fr; }
     #activity { height: 8; }
-    #chat { display: none; }
+    #chat { width: 1fr; border: round $accent; }
     ConfirmScreen { align: center middle; }
     #dialog { width: 72; height: auto; border: thick $warning; background: $surface; padding: 1 2; }
     #buttons { height: auto; margin-top: 1; }
@@ -71,10 +71,12 @@ class CloudyApp(App):
                 Binding("f5", "command('status')", "Refresh"), Binding("escape", "focus_input", "Command bar")]
 
     def __init__(self, root: str | Path, config: dict, *, state_dir: Path | None = None,
-                 trust_repo_rules: bool = False, analyze_on_start: bool = True) -> None:
+                 trust_repo_rules: bool = False, analyze_on_start: bool = True, deep: bool = False,
+                 chat_factory=None) -> None:
         super().__init__()
         self.state = TuiState(Workbench(root, config, EventReporter(self._emit), state_dir=state_dir,
-                                        trust_repo_rules=trust_repo_rules))
+                                        trust_repo_rules=trust_repo_rules, deep=deep, chat_factory=chat_factory))
+        self.state.on_token = self._on_token
         self.analyze_on_start = analyze_on_start
         self.sub_title = str(self.state.workbench.root)
 
@@ -87,15 +89,17 @@ class CloudyApp(App):
             with Vertical(id="right"):
                 yield RichLog(id="diffs", wrap=False, highlight=False)
                 yield RichLog(id="git", wrap=True)
-            yield Static("Local AI chat arrives in v2.0 (optional extra).", id="chat")
+            yield RichLog(id="chat", wrap=True)
         yield RichLog(id="activity", wrap=True, markup=True)
-        yield Input(placeholder="plan <task> · apply · revert · commit · analyze · status · help", id="command")
+        yield Input(placeholder="plan <task> · ask <question> · apply · revert · commit · analyze · status · help",
+                    id="command")
         yield Footer()
 
     def on_mount(self) -> None:
         self._main_thread = threading.get_ident()
         titles = {"findings": "Findings", "checks": "Checks", "diffs": "Pending diffs", "git": "git status",
-                  "activity": "Activity"}
+                  "activity": "Activity", "chat": "Local AI (proposals only — you apply)"}
+        self.query_one("#chat").display = self.state.ai_enabled
         for widget_id, title in titles.items():
             self.query_one(f"#{widget_id}").border_title = title
         self.query_one("#findings", DataTable).add_columns("Location", "Rule", "Kind", "Message")
@@ -173,9 +177,22 @@ class CloudyApp(App):
         git.write("\n".join(view.git) if view.git else "clean" if view.git is not None else "not a git repository")
         if view.applied:
             git.write(Text(f"applied this session: {', '.join(view.applied)}", style="dim"))
+        if self.state.ai_enabled:
+            chat = self.query_one("#chat", RichLog)
+            chat.clear()
+            for speaker, text in view.transcript:
+                chat.write(Text(f"{speaker}:", style="bold cyan" if speaker == "you" else "bold green"))
+                chat.write(Text(text))
         self.sub_title = f"{self.state.workbench.root} — {view.status}"
 
+    def on_unmount(self) -> None:
+        self.state.workbench.close()  # never leave a model engine running
+
     # ---- helpers -------------------------------------------------------------------------------------------------
+
+    def _on_token(self, count: int) -> None:
+        if count % 8 == 0:  # throttle UI updates while the model streams
+            self.call_from_thread(setattr, self, "sub_title", f"{self.state.workbench.root} — thinking… {count} tokens")
 
     def _emit(self, message: str) -> None:
         """Progress from the orchestrator; safe to call from the worker thread."""

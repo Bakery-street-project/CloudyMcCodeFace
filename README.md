@@ -7,8 +7,10 @@ It is part of the CloudyMcCodeFace project.
 - **What it is:** rules, parsers and the tools your project already uses (ruff, eslint, prettier, gofmt, rustfmt,
   rubocop, clang-format, pytest, go test, cargo test, …) in a plan → edit → verify loop. Same repo + same task =
   same result.
-- **What it is not:** there is no language model and no network call. It never invents code or guesses at logic.
-  A failing test is located (`file:line`, expected vs actual) and handed to you, not "fixed".
+- **What it is not:** the core has no language model and no network call. It never invents code or guesses at
+  logic. A failing test is located (`file:line`, expected vs actual) and handed to you, not "fixed".
+- **Optional local AI (2.0):** a model running on your own machine can explain problems and *propose* diffs; you
+  approve every one, and cloudy verifies it. Off unless you configure it; nothing leaves your machine.
 - **Light:** starts in ~0.1 s, ~25 MB RAM of its own, no GPU, no daemon.
 
 ## Quick start
@@ -69,6 +71,19 @@ agent tui
 A full-screen view with findings (with hints), checks, pending diffs, git status and an activity log. Type the same
 commands in the command bar; `apply`, `revert` and `commit` ask for confirmation (y/n) first, and the screen stays
 responsive while checks run. Details: [docs/TUI.md](docs/TUI.md).
+
+## Local AI (optional)
+
+Point cloudy at llama.cpp's `llama-server` and a GGUF model in your user config, then:
+
+```bash
+agent chat                 # free text goes to the local model; `diff` / `apply` / `revert` as usual
+agent tui                  # adds a chat pane: ask <question>
+```
+
+The model can read, search and *propose* edits — never write, apply, commit or run commands. Proposals are pending
+diffs you review; `apply` verifies them and reverts on regression. The engine runs offline on 127.0.0.1 and only
+while you use it. Setup, recommended models for your RAM and a benchmark: [docs/LOCAL_AI.md](docs/LOCAL_AI.md).
 
 ## Git
 

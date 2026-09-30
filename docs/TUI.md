@@ -28,12 +28,14 @@ Textual is imported only when the TUI starts, so the CLI's startup time does not
 └────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-A hidden `#chat` slot is reserved to the right of the main panels for the optional local-AI chat (v2.0).
+When local AI is configured (see [LOCAL_AI.md](LOCAL_AI.md)), a chat pane appears to the right of the main panels
+with the conversation; the model's proposals show up in the diff panel like any other pending edit. Without `[ai]`
+the pane is hidden.
 
 ## Commands and keys
 
-The command bar accepts the same commands as the interactive mode: `analyze`, `plan <task>`, `diff`, `apply`,
-`apply <task>`, `status`, `revert`, `commit`, `help`, `quit`. Anything else is treated as `plan <text>` and never
+The command bar accepts the same commands as the interactive mode: `analyze`, `plan <task>`, `ask <question>`
+(local AI), `diff`, `apply`, `apply <task>`, `status`, `revert`, `commit`, `help`, `quit`. Anything else is treated as `plan <text>` and never
 writes.
 
 | Key | Action |
@@ -55,7 +57,7 @@ idle ──submit(writes)─────► confirming ──y──► busy ─
                                        └─n──► idle   ("Cancelled … Nothing was written.")
 ```
 
-- **Read-only** commands (`analyze`, `plan`, `diff`, `status`) run immediately.
+- **Read-only** commands (`analyze`, `plan`, `ask`, `diff`, `status`) run immediately. `ask` only proposes edits.
 - **Writing** commands (`apply`, `apply <task>`, `revert`, `commit`) first check their precondition (something
   pending / something applied) and are refused with a message if it fails. Otherwise they ask a yes/no question
   that says exactly what will be written.

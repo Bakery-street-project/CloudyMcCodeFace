@@ -1,7 +1,9 @@
 # Architecture
 
-`cloudy` is a coding agent without a model. Every decision comes from code that can be read, tested and
-reproduced: the same repository state and task always produce the same plan, edits and report.
+`cloudy`'s core is a coding agent without a model. Every decision comes from code that can be read, tested and
+reproduced: the same repository state and task always produce the same plan, edits and report. The optional local
+AI (`ai/`, see [LOCAL_AI.md](LOCAL_AI.md)) sits on top: it can only propose edits, which then pass through the same
+deterministic diff → confirm → apply → verify path.
 
 ## Decisions
 
@@ -20,6 +22,7 @@ reproduced: the same repository state and task always produce the same plan, edi
 | `apply` writes exactly what `plan` showed | The REPL keeps the planned `Edit` objects; applying re-checks every file is unchanged (stale → nothing kept) instead of re-planning into different edits. |
 | Git is local and conservative | cloudy stages only its own edits, refuses files that had user changes, refuses to commit foreign staged files, never amends/skips hooks/pushes; the deny-list blocks history rewriting. |
 | TUI as an optional Textual extra | Measured: rich-only would need hand-built keyboard input per OS; Textual adds 6 small pure-Python packages, ~0.38 s to first frame in a real terminal, imported only by `agent tui`. |
+| Local AI proposes, humans approve | Model output becomes ordinary pending `Edit`s (rule `ai.proposal`) that go through the same diff → confirm → apply → verify → auto-revert path; the model has no write, apply, commit or shell tool. The engine runs offline on loopback; its settings live only in the user config. |
 | Plugins need explicit trust | User plugins (`~/.config/cloudy/rules/`) load automatically; repository plugins run code inside cloudy even in analyze mode, so only `--trust-repo-rules` enables them — never repository config. |
 
 ## Components
@@ -57,6 +60,7 @@ task ──► Planner.classify ──► intents
 | `plugins.py` | Registry | Loads built-in rule modules, user plugins and (trusted) repository plugins; validates them; merges their languages, tools, manifests, test patterns and checks; applies `disabled_rules` / `disabled_groups`. |
 | `git.py` | Git helper | Read-only status and diff summaries; stages only cloudy's applied edits; local commit with a deterministic message. |
 | `workbench.py` | Session bookkeeping | Pending plan, applied sessions, last session; command parsing. Shared by the interactive mode and the TUI; delegates all work to the Orchestrator. |
+| `ai/` | Local AI (optional) | `config.py` (user-level `[ai]`), `engine.py` (llama-server on 127.0.0.1, `--offline`, clean env, lazy start, always stopped), `client.py` (stdlib streaming client, schema-constrained JSON), `tools.py` (read/search/findings/checks/propose/answer, strict validation), `chat.py` (the loop; proposals become a pending session with a recorded baseline), `bench.py`. Imported only by `ask`/`chat`. See [LOCAL_AI.md](LOCAL_AI.md). |
 | `tui/` | Terminal UI | `state.py`: the TUI state machine (no Textual import); `app.py`: the Textual view with a background worker and y/n confirmation. See [TUI.md](TUI.md). |
 | `repl.py` | Interactive mode | `analyze`, `plan`, `diff`, `apply`, `apply <task>`, `status`, `revert`, `commit`, `quit`; free text is only ever planned. |
 | `state.py` | Memory | Session JSON: task, intents, plan steps and statuses, every command with exit code and duration, every verification, findings, edits with before/after SHA-256 and diff; backups per session. |
@@ -72,6 +76,7 @@ src/cloudy/
   repl.py           interactive mode
   workbench.py      session bookkeeping shared by repl and tui
   tui/              state.py (state machine), app.py (Textual view)
+  ai/               optional local AI: config, engine, client, tools, chat, bench
   orchestrator.py   plan → edit → verify loop, apply-plan, revert, commit
   plugins.py        plugin interface and registry
   git.py            safe git helpers

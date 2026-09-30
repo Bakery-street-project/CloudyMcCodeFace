@@ -8,7 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 
 
-def run(root: str | Path, config: dict, *, state_dir: Path | None = None, trust_repo_rules: bool = False) -> int:
+def run(root: str | Path, config: dict, *, state_dir: Path | None = None, trust_repo_rules: bool = False,
+        deep: bool = False) -> int:
     try:
         from .app import CloudyApp
     except ImportError as exc:
@@ -16,5 +17,5 @@ def run(root: str | Path, config: dict, *, state_dir: Path | None = None, trust_
             raise
         print('The TUI needs Textual: pip install "cloudy[tui]"  (the `agent` CLI works without it)')
         return 2
-    CloudyApp(root, config, state_dir=state_dir, trust_repo_rules=trust_repo_rules).run()
+    CloudyApp(root, config, state_dir=state_dir, trust_repo_rules=trust_repo_rules, deep=deep).run()
     return 0

@@ -37,8 +37,11 @@ def commit_message(task: str, edits: list[Edit], conventional: bool) -> str:
     rules: dict[str, set[str]] = {}
     for edit in applied:
         rules.setdefault(edit.rule, set()).add(edit.path)
-    body = ["Applied by cloudy (deterministic rules, no model):", ""]
+    model_edits = any(rule.startswith("ai.") for rule in rules)
+    body = ["Applied by cloudy" + (":" if model_edits else " (deterministic rules, no model):"), ""]
     body += [f"- {rule}: {', '.join(sorted(paths))}" for rule, paths in sorted(rules.items())]
+    if model_edits:
+        body += ["", "ai.proposal edits were proposed by a local model and approved by a human before being applied."]
     return "\n".join([subject, "", *body]) + "\n"
 
 

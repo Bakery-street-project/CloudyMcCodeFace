@@ -15,9 +15,13 @@ from .models import Edit
 from .orchestrator import Orchestrator
 from .plugins import Registry, load_registry
 from .report import Reporter
-from .state import Session
+from .state import Session, default_state_dir
 
-COMMANDS = ("analyze", "plan", "diff", "apply", "status", "revert", "commit", "help", "quit")
+
+class AIUnavailable(Exception):
+    """Local AI is not configured (or cannot start); the message says how to set it up."""
+
+COMMANDS = ("analyze", "plan", "ask", "diff", "apply", "status", "revert", "commit", "help", "quit")
 QUIT = ("quit", "exit", ":q", "q")
 
 
@@ -50,7 +54,8 @@ def parse(line: str) -> Command | None:
 
 class Workbench:
     def __init__(self, root: str | Path, config: dict, reporter: Reporter, *, state_dir: Path | None = None,
-                 registry: Registry | None = None, trust_repo_rules: bool = False) -> None:
+                 registry: Registry | None = None, trust_repo_rules: bool = False, deep: bool = False,
+                 chat_factory=None) -> None:
         self.root = Path(root).resolve()
         self.config = config
         self.reporter = reporter
@@ -59,6 +64,9 @@ class Workbench:
         self.pending: Session | None = None  # last plan with edits not yet written
         self.last: Session | None = None  # last session of any kind
         self.applied: list[Session] = []  # applied sessions, newest last (for revert and commit)
+        self.deep = deep  # use the [ai] deep_model
+        self._chat_factory = chat_factory  # tests inject a fake; otherwise the local engine is started lazily
+        self._chat = None
 
     def orchestrator(self, apply: bool = False) -> Orchestrator:
         return Orchestrator(self.root, apply=apply, config=self.config, reporter=self.reporter,
@@ -101,6 +109,57 @@ class Workbench:
         if not self.applied:
             return None
         return self.orchestrator().commit_session(self.applied[-1])
+
+    def ask(self, question: str, on_token=None, on_step=None):
+        """Ask the local model (optional extra). Proposals become pending edits; nothing is written.
+
+        The AI package is imported only here, so the deterministic core never loads it.
+        """
+        if self._chat is None:
+            self._chat = self._open_chat()
+        result = self._chat.ask(question, on_token, on_step)
+        if result.session is not None and self.has_pending(result.session):
+            self.pending = result.session
+        return result
+
+    def ai_configured(self) -> bool:
+        if self._chat_factory is not None:
+            return True
+        from .ai.config import AIConfigError, load_ai_config
+        try:
+            return load_ai_config() is not None
+        except AIConfigError:
+            return True  # configured but invalid: `ask` reports the problem
+
+    def close(self) -> None:
+        """Stop the local engine if one was started."""
+        if self._chat is not None:
+            self._chat.close()
+            self._chat = None
+
+    def _open_chat(self):
+        if self._chat_factory is not None:
+            return self._chat_factory(self)
+        from .ai.chat import Chat
+        from .ai.client import Client
+        from .ai.config import AIConfigError, ai_config_path, load_ai_config
+        from .ai.engine import Engine, EngineError
+        try:
+            config = load_ai_config()
+        except AIConfigError as exc:
+            raise AIUnavailable(str(exc)) from None
+        if config is None:
+            raise AIUnavailable(f"local AI is not configured: add an [ai] table to {ai_config_path()} "
+                                "(see docs/LOCAL_AI.md)")
+        log_dir = self.state_dir or default_state_dir()
+        log_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            engine = Engine(config, deep=self.deep, log_path=log_dir / "llama-server.log")
+            url = engine.start()
+        except EngineError as exc:
+            raise AIUnavailable(str(exc)) from None
+        client = Client(url, timeout=config["request_timeout"], seed=config["seed"], max_tokens=config["max_tokens"])
+        return Chat(self, client, model_name=engine.model_name, ai_config=config, on_close=engine.stop)
 
     # ---- views -------------------------------------------------------------------------------------------------------
 

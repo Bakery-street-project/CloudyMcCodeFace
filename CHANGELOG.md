@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.0.0
+
+- **Optional local AI** (`agent chat`, `ask <question>` in the interactive mode, a chat pane in `agent tui`): a model
+  running in llama.cpp's `llama-server` on your machine explains findings and failing checks and proposes edits.
+  - The model can only read, search, list findings, run checks and propose edits (exact snippet replacement,
+    syntax-validated). No write, apply, commit or shell tool exists; replies are schema-constrained and validated.
+  - Proposals are pending diffs labelled `ai.proposal`; you apply them through the existing path, which verifies
+    against a recorded baseline and reverts on regression. Commit messages say which edits came from the model.
+  - The engine starts only when used, on 127.0.0.1 with `--offline` and a clean environment, and stops with
+    cloudy. Settings live only in the user config; `[ai]` in a repository is refused.
+  - `python -m cloudy.ai.bench` measures load time, time to first token, tokens/s and RAM on your machine.
+- Without `[ai]` configured, cloudy behaves exactly as 1.1; the core never imports the AI package.
+
 ## 1.1.0
 
 - **Terminal UI:** `agent tui` (optional extra `cloudy[tui]`, Textual): findings with hints, checks, pending diffs,

@@ -24,6 +24,7 @@ EXAMPLES = """examples:
   agent --apply --commit "fix formatting"                    # local commit of cloudy's own edits, never pushed
   agent                                                       # interactive: plan, diff, apply, status, revert
   agent tui                                                   # full-screen terminal UI (pip install "cloudy[tui]")
+  agent chat                                                  # optional local AI chat (see docs/LOCAL_AI.md)
 """
 
 
@@ -38,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--commit", action="store_true",
                         help="with --apply: stage cloudy's files and commit them locally (never pushes)")
     parser.add_argument("--tui", action="store_true", help="full-screen terminal UI (same as `agent tui`)")
+    parser.add_argument("--deep", action="store_true", help="local AI: use the [ai] deep_model (e.g. 14B)")
     parser.add_argument("--trust-repo-rules", action="store_true",
                         help="load rule plugins from the repository's .cloudy/rules/ (runs their code)")
     parser.add_argument("--max-cycles", type=int, metavar="N", help="fix/verify iterations (default: config or 3)")
@@ -86,7 +88,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.tui or args.task == ["tui"]:
             from .tui import run as run_tui
-            return run_tui(repo, config, state_dir=args.state_dir, trust_repo_rules=args.trust_repo_rules)
+            return run_tui(repo, config, state_dir=args.state_dir, trust_repo_rules=args.trust_repo_rules,
+                           deep=args.deep)
+        if args.task == ["chat"]:
+            return Repl(repo, config, console, state_dir=args.state_dir, trust_repo_rules=args.trust_repo_rules,
+                        verbose=args.verbose, chat_mode=True, deep=args.deep).loop()
         if not args.task:
             if args.json:
                 console.print("[red]error:[/] a task is required with --json")

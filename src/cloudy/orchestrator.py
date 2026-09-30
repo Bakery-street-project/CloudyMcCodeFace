@@ -94,6 +94,16 @@ class Orchestrator:
         session.save()
         return session
 
+    def workspace(self, session: Session, intents: list[str]) -> Workspace:
+        """Explore the repository for a session (used by the local-AI chat to read files and propose edits)."""
+        return self._setup(session, intents)
+
+    def baseline(self, ws: Workspace, session: Session, intents: list[str]) -> Verification:
+        """Run the checks for `intents` on the files as they are on disk and record them as the session's baseline,
+        so that applying the session later can detect and revert regressions."""
+        checks = build_checks(ws.profile, self.config["checks"], self.registry)
+        return self._verify(ws, session, None, checks, categories_for(set(intents)), "baseline")
+
     # ---- shared plumbing -----------------------------------------------------------------------------------------
 
     def _guarded(self, session: Session, work) -> Session:

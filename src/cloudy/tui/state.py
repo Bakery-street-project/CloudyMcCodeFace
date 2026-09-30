@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from ..models import CheckResult, Edit, Finding
 from ..report import Reporter, first_location
-from ..workbench import Command, Workbench, parse
+from ..workbench import AIUnavailable, Command, Workbench, parse
 
 
 class EventReporter(Reporter):
@@ -54,6 +54,7 @@ class View:
     applied: list[str] = field(default_factory=list)
     git: list[str] | None = None
     status: str = "ready"
+    transcript: list[tuple[str, str]] = field(default_factory=list)  # (speaker, text) for the chat pane
 
 
 QUESTIONS = {
@@ -69,6 +70,9 @@ class TuiState:
         self.workbench = workbench
         self.busy = False
         self.confirming: Command | None = None
+        self.ai_enabled = workbench.ai_configured()
+        self.transcript: list[tuple[str, str]] = []
+        self.on_token: Callable[[int], None] | None = None  # progress while the model is generating
 
     # ---- transitions -------------------------------------------------------------------------------------------------
 
@@ -83,8 +87,11 @@ class TuiState:
             return Action("help")
         if self.busy or self.confirming:
             return Action("busy", message="Busy — wait for the current command to finish.")
-        if command.name == "plan" and not command.argument:
-            return Action("refused", message="usage: plan <task>")
+        if command.name in ("plan", "ask") and not command.argument:
+            placeholder = "task" if command.name == "plan" else "question"
+            return Action("refused", message=f"usage: {command.name} <{placeholder}>")
+        if command.name == "ask" and not self.ai_enabled:
+            return Action("refused", message="Local AI is not configured; see docs/LOCAL_AI.md.")
         if not command.writes:
             return Action("run", command)
         refusal = self._precondition(command)
@@ -132,6 +139,8 @@ class TuiState:
             session = wb.analyze(arg)
         elif name == "plan":
             session = wb.plan(arg)
+        elif name == "ask":
+            return self._ask(arg)
         elif name == "apply":
             session = wb.apply_task(arg) if arg else wb.apply_pending()
         elif name == "revert":
@@ -149,9 +158,34 @@ class TuiState:
             return "Nothing to do."
         return f"{session.data['status']}: {session.data['message']}"
 
+    def _ask(self, question: str) -> str:
+        self.transcript.append(("you", question))
+        tokens = 0
+
+        def count(_: str) -> None:
+            nonlocal tokens
+            tokens += 1
+            if self.on_token:
+                self.on_token(tokens)
+
+        try:
+            result = self.workbench.ask(question, on_token=count)
+        except AIUnavailable as exc:
+            self.transcript.append(("cloudy", f"Local AI unavailable: {exc}"))
+            return f"local AI unavailable: {exc}"
+        answer = result.answer or "(no answer)"
+        if result.errors:
+            answer += "\n\n(rejected: " + "; ".join(result.errors) + ")"
+        self.transcript.append((result.model, answer))
+        if result.session is not None:
+            return (f"{len(result.session.edits)} edit(s) proposed by {result.model} — review them in the diff "
+                    "panel, then apply")
+        return f"answered by {result.model} ({result.tokens} tokens), no edits proposed"
+
     def view(self) -> View:
         wb = self.workbench
-        view = View(pending=wb.pending_edits(), applied=wb.applied_paths(), git=wb.git_status())
+        view = View(pending=wb.pending_edits(), applied=wb.applied_paths(), git=wb.git_status(),
+                    transcript=list(self.transcript))
         if wb.last:
             for f in wb.last.data["findings"]:
                 finding = Finding(**f)

@@ -47,6 +47,9 @@ def load_config(root: str | Path) -> dict:
         return config
     origin, data = found
     unknown = sorted(set(data) - set(DEFAULTS))
+    if "ai" in unknown:
+        raise ConfigError(f"{origin}: [ai] settings belong in your user config (~/.config/cloudy/config.toml), not in "
+                          "a repository — a repository must not choose which program cloudy starts")
     if unknown:
         raise ConfigError(f"{origin}: unknown key(s) {', '.join(unknown)}; allowed: {', '.join(DEFAULTS)}")
     config.update(data)
