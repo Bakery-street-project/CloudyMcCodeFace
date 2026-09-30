@@ -1,0 +1,25 @@
+# Changelog
+
+## 1.0.0
+
+First stable release of `cloudy`, an offline, deterministic coding agent (no language model, no network calls).
+
+- **Agent loop:** Explorer, Planner, Editor, Executor and Verifier with explore → plan → edit → verify cycles,
+  no-progress detection and automatic revert of a cycle that breaks a previously passing check.
+- **Safe by default:** plan + diffs only; `--apply` writes atomically with backups; JSON session logs outside the
+  repository; files created by the project's own tools reported separately (optionally removed).
+- **Languages:** Python, JavaScript/TypeScript (npm, pnpm, yarn, bun), Go, Rust, Ruby, C/C++; JS/TS, Go and Rust
+  monorepos handled per project directory.
+- **Fixes via the project's own tools:** ruff, eslint, prettier, gofmt, rustfmt, rubocop (safe autocorrect),
+  clang-format; plus deterministic CI, Dependabot, CODEOWNERS, README/license and clone-URL rules.
+- **Python checks in the project's environment:** pytest and mypy run as `python -m` with the repository's
+  virtualenv (`.venv`, `venv`, `env`) or `python3`, never with an isolated tool install that lacks the project's
+  dependencies.
+- **Reports for humans:** failing checks and ambiguous findings with `file:line` and a hint.
+- **Interactive mode:** `plan`, `diff`, `apply` (exactly the shown diffs), `status`, `revert`, `commit`.
+- **Git helpers:** stage/commit only cloudy's own edits with a deterministic message; never push; destructive git
+  commands blocked.
+- **Plugins:** rules, languages, tools and checks from `~/.config/cloudy/rules/`; repository plugins only with
+  `--trust-repo-rules`.
+- **Configuration:** `cloudy.toml` / `[tool.cloudy]` for timeouts, cycles, rule groups, tool paths, ignore
+  patterns, extra checks and denied commands.

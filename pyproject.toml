@@ -4,12 +4,26 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cloudy"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Offline, model-free coding agent built from deterministic rules and the repo's own tools"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
+authors = [{ name = "Bakery Street Project" }]
 dependencies = ["rich>=13", "PyYAML>=6"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Repository = "https://github.com/Bakery-street-project/CloudyMcCodeFace"
+Changelog = "https://github.com/Bakery-street-project/CloudyMcCodeFace/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.5", "bandit>=1.7"]
@@ -17,6 +31,9 @@ dev = ["pytest>=8", "ruff>=0.5", "bandit>=1.7"]
 [project.scripts]
 agent = "cloudy.cli:main"
 cloudy = "cloudy.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "cloudy.__version__" }
 
 [tool.setuptools.packages.find]
 where = ["src"]

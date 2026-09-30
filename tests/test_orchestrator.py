@@ -10,6 +10,7 @@ from cloudy.cli import main
 from cloudy.orchestrator import Orchestrator
 from cloudy.plugins import Plugin, Registry
 from cloudy.rules import Rule
+from cloudy.verifier import build_checks
 
 
 def snapshot(root):
@@ -133,3 +134,16 @@ def test_failed_apply_does_not_leave_pending_overlay(make_repo, tmp_path, monkey
     data = run(root, "fix the CI", tmp_path, apply=True)
     assert data["status"] == "needs_human" and data["edits"] == []
     assert any(s["status"] == "failed" and "disk full" in s["note"] for s in data["plan"])
+
+
+def test_python_tools_run_with_the_projects_interpreter(make_repo, context):
+    root = make_repo({"a.py": "x = 1\n", "tests/test_a.py": "def test_a():\n    pass\n"}, git=False)
+    (root / ".venv" / "bin").mkdir(parents=True)
+    (root / ".venv" / "bin" / "python").symlink_to(sys.executable)
+    profile = context(root).profile
+    assert profile.python == str(root / ".venv" / "bin" / "python") and "pytest" in profile.python_modules
+    pytest_check = next(c for c in build_checks(profile) if c.name == "pytest")
+    assert pytest_check.command[:3] == [profile.python, "-m", "pytest"]
+    profile.python_modules = []  # interpreter without pytest: fall back to a pytest executable, if any
+    fallback = next(c for c in build_checks(profile) if c.name == "pytest")
+    assert fallback.command is None or fallback.command[0] == profile.tool_path("pytest")

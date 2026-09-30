@@ -131,6 +131,8 @@ class RepoProfile:
     go_modules: list[str] = field(default_factory=list)
     cargo_roots: list[str] = field(default_factory=list)
     test_runners: list[str] = field(default_factory=list)
+    python: str | None = None  # the project's interpreter (repo virtualenv first, then python3 on PATH)
+    python_modules: list[str] = field(default_factory=list)  # PYTHON_MODULES importable by that interpreter
     license: str | None = None
     docs: list[str] = field(default_factory=list)
     git: dict = field(default_factory=dict)
@@ -417,5 +419,23 @@ def explore(root: str | Path, executor: Executor, registry=None, *, ignore: list
     for name, path in pinned.items():
         if path is None:
             profile.tools[name] = ToolInfo(name, None)
+    if "Python" in profile.languages or "pip" in profile.ecosystems:
+        profile.python, profile.python_modules = _project_python(root, executor, profile)
     profile.git = _git(executor)
     return profile
+
+
+PYTHON_MODULES = ("pytest", "mypy")  # run as `python -m` so they see the project's installed dependencies
+
+
+def _project_python(root: Path, executor: Executor, profile: RepoProfile) -> tuple[str | None, list[str]]:
+    """The interpreter the project's own dependencies live in, and which PYTHON_MODULES it can import."""
+    bindir, exe = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")
+    venv = next((root / d / bindir / exe for d in (".venv", "venv", "env") if (root / d / bindir / exe).is_file()),
+                None)
+    python = str(venv) if venv else profile.tools["python3"].path if profile.has_tool("python3") else None
+    if python is None:
+        return None, []
+    probe = "import importlib.util, sys; print(' '.join(m for m in sys.argv[1:] if importlib.util.find_spec(m)))"
+    result = executor.run([python, "-c", probe, *PYTHON_MODULES], timeout=30)
+    return python, result.stdout.split() if result.ok else []

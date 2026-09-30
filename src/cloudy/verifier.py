@@ -248,9 +248,18 @@ def build_checks(profile: RepoProfile, custom: dict[str, str] | None = None, reg
     tool_check("ruff", "lint", "ruff", ["check", "--no-cache", "--output-format=concise", "."],
                python and ("ruff" in profile.linters or "ruff" in profile.ci_tools or profile.has_tool("ruff")),
                interpret_ruff)
-    tool_check("mypy", "lint", "mypy", ["."], python and "mypy" in profile.linters)
-    tool_check("pytest", "test", "pytest", ["-q", "-rfE", "--tb=short", "-p", "no:cacheprovider"],
-               python or "pytest" in profile.ci_tools, interpret_pytest)
+    def python_check(name: str, category: str, args: list[str], applies: bool,
+                     interpret: Callable[[CommandResult], CheckResult] | None = None) -> None:
+        """Prefer `<project python> -m <tool>`: a standalone tool install cannot import the project's deps."""
+        if applies and name in profile.python_modules:
+            checks.append(Check(name, category, [profile.python, "-m", name, *args],
+                                interpret or generic(name, category)))
+        else:
+            tool_check(name, category, name, args, applies, interpret)
+
+    python_check("mypy", "lint", ["."], python and "mypy" in profile.linters)
+    python_check("pytest", "test", ["-q", "-rfE", "--tb=short", "-p", "no:cacheprovider"],
+                 python or "pytest" in profile.ci_tools, interpret_pytest)
 
     for project in profile.node_projects:
         pm = project.package_manager
