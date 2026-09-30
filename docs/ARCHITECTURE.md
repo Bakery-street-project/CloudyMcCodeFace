@@ -19,6 +19,7 @@ reproduced: the same repository state and task always produce the same plan, edi
 | Offline environment for commands | Package managers are forced offline, so a run never fetches anything. |
 | `apply` writes exactly what `plan` showed | The REPL keeps the planned `Edit` objects; applying re-checks every file is unchanged (stale → nothing kept) instead of re-planning into different edits. |
 | Git is local and conservative | cloudy stages only its own edits, refuses files that had user changes, refuses to commit foreign staged files, never amends/skips hooks/pushes; the deny-list blocks history rewriting. |
+| TUI as an optional Textual extra | Measured: rich-only would need hand-built keyboard input per OS; Textual adds 6 small pure-Python packages, ~0.38 s to first frame in a real terminal, imported only by `agent tui`. |
 | Plugins need explicit trust | User plugins (`~/.config/cloudy/rules/`) load automatically; repository plugins run code inside cloudy even in analyze mode, so only `--trust-repo-rules` enables them — never repository config. |
 
 ## Components
@@ -55,6 +56,8 @@ task ──► Planner.classify ──► intents
 | `rules/` | Rule system | Deterministic checks and fixes, grouped by intent. Each module exports `RULES`; Ruby and C/C++ are written purely against the plugin interface. |
 | `plugins.py` | Registry | Loads built-in rule modules, user plugins and (trusted) repository plugins; validates them; merges their languages, tools, manifests, test patterns and checks; applies `disabled_rules` / `disabled_groups`. |
 | `git.py` | Git helper | Read-only status and diff summaries; stages only cloudy's applied edits; local commit with a deterministic message. |
+| `workbench.py` | Session bookkeeping | Pending plan, applied sessions, last session; command parsing. Shared by the interactive mode and the TUI; delegates all work to the Orchestrator. |
+| `tui/` | Terminal UI | `state.py`: the TUI state machine (no Textual import); `app.py`: the Textual view with a background worker and y/n confirmation. See [TUI.md](TUI.md). |
 | `repl.py` | Interactive mode | `analyze`, `plan`, `diff`, `apply`, `apply <task>`, `status`, `revert`, `commit`, `quit`; free text is only ever planned. |
 | `state.py` | Memory | Session JSON: task, intents, plan steps and statuses, every command with exit code and duration, every verification, findings, edits with before/after SHA-256 and diff; backups per session. |
 | `orchestrator.py` | Orchestrator | The loop above; safe vs apply mode; `apply_edits` (apply a plan exactly), `revert`, `commit_session`; rollback on regression or stale files; ignore patterns; tool side effects (optionally removed); final status. |
@@ -67,6 +70,8 @@ pyproject.toml
 src/cloudy/
   cli.py            entry point: `agent` / `cloudy`
   repl.py           interactive mode
+  workbench.py      session bookkeeping shared by repl and tui
+  tui/              state.py (state machine), app.py (Textual view)
   orchestrator.py   plan → edit → verify loop, apply-plan, revert, commit
   plugins.py        plugin interface and registry
   git.py            safe git helpers

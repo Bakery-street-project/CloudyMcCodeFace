@@ -59,6 +59,17 @@ cloudy> commit                           # commit cloudy's files locally
 Also `analyze`, `diff`, `apply <task>` (plan + apply in one step), `help`, `quit`. Anything else you type is
 treated as `plan <text>` and never writes.
 
+## Terminal UI
+
+```bash
+pip install ".[tui]"      # optional extra (Textual); the CLI does not need it
+agent tui
+```
+
+A full-screen view with findings (with hints), checks, pending diffs, git status and an activity log. Type the same
+commands in the command bar; `apply`, `revert` and `commit` ask for confirmation (y/n) first, and the screen stays
+responsive while checks run. Details: [docs/TUI.md](docs/TUI.md).
+
 ## Git
 
 `agent --apply --stage "…"` or `--apply --commit "…"` (and `commit` in interactive mode) stage only the files

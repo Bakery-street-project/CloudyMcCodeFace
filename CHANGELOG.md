@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.0
+
+- **Terminal UI:** `agent tui` (optional extra `cloudy[tui]`, Textual): findings with hints, checks, pending diffs,
+  git status and an activity log; y/n confirmation before apply, revert and commit; work runs in a background
+  worker so the first frame appears immediately. See `docs/TUI.md`.
+- **Workbench:** the interactive mode's session bookkeeping moved to `cloudy/workbench.py`, shared by the
+  interactive mode and the TUI. Behaviour of the interactive mode is unchanged.
+- The CLI's startup and the core's dependencies are unchanged; Textual is imported only by `agent tui`.
+
 ## 1.0.0
 
 First stable release of `cloudy`, an offline, deterministic coding agent (no language model, no network calls).

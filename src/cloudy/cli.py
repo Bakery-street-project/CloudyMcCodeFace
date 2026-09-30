@@ -23,6 +23,7 @@ EXAMPLES = """examples:
   agent --apply -C ../other-repo "run the test suite and fix failures"
   agent --apply --commit "fix formatting"                    # local commit of cloudy's own edits, never pushed
   agent                                                       # interactive: plan, diff, apply, status, revert
+  agent tui                                                   # full-screen terminal UI (pip install "cloudy[tui]")
 """
 
 
@@ -36,6 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stage", action="store_true", help="with --apply: git-stage only the files cloudy changed")
     parser.add_argument("--commit", action="store_true",
                         help="with --apply: stage cloudy's files and commit them locally (never pushes)")
+    parser.add_argument("--tui", action="store_true", help="full-screen terminal UI (same as `agent tui`)")
     parser.add_argument("--trust-repo-rules", action="store_true",
                         help="load rule plugins from the repository's .cloudy/rules/ (runs their code)")
     parser.add_argument("--max-cycles", type=int, metavar="N", help="fix/verify iterations (default: config or 3)")
@@ -82,6 +84,9 @@ def main(argv: list[str] | None = None) -> int:
         console.print(f"[red]config error:[/] {exc}")
         return 2
     try:
+        if args.tui or args.task == ["tui"]:
+            from .tui import run as run_tui
+            return run_tui(repo, config, state_dir=args.state_dir, trust_repo_rules=args.trust_repo_rules)
         if not args.task:
             if args.json:
                 console.print("[red]error:[/] a task is required with --json")

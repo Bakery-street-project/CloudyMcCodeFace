@@ -26,7 +26,8 @@ Repository = "https://github.com/Bakery-street-project/CloudyMcCodeFace"
 Changelog = "https://github.com/Bakery-street-project/CloudyMcCodeFace/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.5", "bandit>=1.7"]
+tui = ["textual>=8.0"]
+dev = ["pytest>=8", "ruff>=0.5", "bandit>=1.7", "textual>=8.0"]
 
 [project.scripts]
 agent = "cloudy.cli:main"
