@@ -106,9 +106,12 @@ def interpret_ruff(result: CommandResult) -> CheckResult:
     return base
 
 
-def _collect(result: CommandResult, name: str, category: str, patterns: list[re.Pattern],
-             summary: str | None = None) -> CheckResult:
-    """Generic result, with details replaced by the lines matching any pattern (first group if present)."""
+def match_output(result: CommandResult, name: str, category: str, patterns: list[re.Pattern],
+                 summary: str | None = None) -> CheckResult:
+    """Generic result, with details replaced by the lines matching any pattern (groups joined if present).
+
+    Public helper for plugin interpreters.
+    """
     base = generic(name, category)(result)
     details = []
     for line in result.output.splitlines():
@@ -134,7 +137,7 @@ JS_TEST_PATTERNS = [re.compile(p) for p in (
 
 
 def interpret_js_test(name: str) -> Callable[[CommandResult], CheckResult]:
-    return lambda result: _collect(result, name, "test", JS_TEST_PATTERNS)
+    return lambda result: match_output(result, name, "test", JS_TEST_PATTERNS)
 
 
 def interpret_eslint(result: CommandResult) -> CheckResult:
@@ -160,7 +163,7 @@ def interpret_prettier(result: CommandResult) -> CheckResult:
 
 
 def interpret_tsc(result: CommandResult) -> CheckResult:
-    return _collect(result, "tsc", "lint", [re.compile(r"^(\S+\(\d+,\d+\): error TS\d+: .*)$")])
+    return match_output(result, "tsc", "lint", [re.compile(r"^(\S+\(\d+,\d+\): error TS\d+: .*)$")])
 
 
 def interpret_gofmt(result: CommandResult) -> CheckResult:
@@ -183,7 +186,7 @@ GO_PATTERNS = [re.compile(p) for p in (
 
 
 def interpret_go(name: str, category: str) -> Callable[[CommandResult], CheckResult]:
-    return lambda result: _collect(result, name, category, GO_PATTERNS)
+    return lambda result: match_output(result, name, category, GO_PATTERNS)
 
 
 CARGO_PATTERNS = [re.compile(p) for p in (
@@ -198,7 +201,7 @@ CARGO_PATTERNS = [re.compile(p) for p in (
 
 
 def interpret_cargo(name: str, category: str) -> Callable[[CommandResult], CheckResult]:
-    return lambda result: _collect(result, name, category, CARGO_PATTERNS)
+    return lambda result: match_output(result, name, category, CARGO_PATTERNS)
 
 
 def _renamed(interpret: Callable[[CommandResult], CheckResult], name: str) -> Callable[[CommandResult], CheckResult]:

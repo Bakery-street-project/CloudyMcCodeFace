@@ -18,7 +18,8 @@ WORKFLOWS = (".github/workflows/*.yml", ".github/workflows/*.yaml")
 MASK = re.compile(r"\s*\|\|\s*(?:true|:|exit\s+0)\s*$")
 CHECK_TOOL = re.compile(
     r"^(?:python3?\s+-m\s+)?(?:pip3?|pytest|ruff|flake8|pylint|mypy|bandit|black|isort|eslint|prettier|tsc|npm|"
-    r"npx|yarn|pnpm|bun|jest|vitest|go|gofmt|cargo|rustfmt|make|golangci-lint|shellcheck|pre-commit)\b"
+    r"npx|yarn|pnpm|bun|jest|vitest|go|gofmt|cargo|rustfmt|make|golangci-lint|shellcheck|pre-commit|bundle|rake|"
+    r"rubocop|rspec|cmake|ctest|clang-format)\b"
 )
 PYTEST = re.compile(r"^(?:python3?\s+-m\s+)?pytest\b")
 RUN_KEY = re.compile(r"^(\s*)(-\s+)?run:\s*(.*)$")

@@ -7,6 +7,7 @@ A plugin is a Python module with this interface (every name optional except RULE
     LANG_TOOLS: dict[str, tuple[str, ...]]         language -> tools the Explorer probes
     MANIFESTS: dict[str, str]                      manifest file name -> ecosystem, e.g. {"Gemfile": "bundler"}
     VERSION_ARGS: dict[str, tuple[str, ...] | None]  tool -> version arguments (None: presence is enough)
+    TEST_PATTERNS: tuple[str, ...]                 file-name globs that mark test files, e.g. ("*_test.rb",)
     def checks(profile: RepoProfile) -> list[Check]  verifier checks (see verifier.command_check)
 
 Loading order: built-ins, then ~/.config/cloudy/rules/*.py, then <repo>/.cloudy/rules/*.py. Repository plugins run
@@ -28,7 +29,7 @@ from .models import sha256
 from .rules import Rule
 
 FIX_INTENTS = frozenset({"fix_ci", "sync_docs", "fix_lint", "fix_tests"})
-BUILTIN_MODULES = ("ci", "repo", "docs", "python", "javascript", "go", "rust")
+BUILTIN_MODULES = ("ci", "repo", "docs", "python", "javascript", "go", "rust", "ruby", "cpp")
 
 
 class PluginError(Exception):
@@ -44,6 +45,7 @@ class Plugin:
     lang_tools: dict[str, tuple[str, ...]] = field(default_factory=dict)
     manifests: dict[str, str] = field(default_factory=dict)
     version_args: dict[str, tuple[str, ...] | None] = field(default_factory=dict)
+    test_patterns: tuple[str, ...] = ()
     checks: Callable | None = None
 
     @classmethod
@@ -69,6 +71,10 @@ class Plugin:
             if not isinstance(value, dict) or not all(isinstance(k, str) and check(k, v) for k, v in value.items()):
                 raise PluginError(f"{attr} has the wrong shape; see cloudy.plugins for the interface")
             setattr(plugin, target, dict(value))
+        test_patterns = getattr(module, "TEST_PATTERNS", ())
+        if not isinstance(test_patterns, tuple) or not all(isinstance(p, str) for p in test_patterns):
+            raise PluginError("TEST_PATTERNS must be a tuple of glob strings")
+        plugin.test_patterns = test_patterns
         checks = getattr(module, "checks", None)
         if checks is not None and not callable(checks):
             raise PluginError("checks must be a function taking the RepoProfile")
@@ -93,6 +99,9 @@ class Registry:
                 if rule.id not in disabled_rules and rule.id.split(".", 1)[0] not in disabled_groups:
                     rules.append(rule)
         return rules
+
+    def test_patterns(self) -> tuple[str, ...]:
+        return tuple(p for plugin in self.plugins for p in plugin.test_patterns)
 
     def merged(self, attr: str) -> dict:
         result: dict = {}

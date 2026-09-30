@@ -83,8 +83,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     try:
         if not args.task:
-            if args.json or not sys.stdin.isatty():
-                console.print("[red]error:[/] a task is required with --json or non-interactive input")
+            if args.json:
+                console.print("[red]error:[/] a task is required with --json")
                 return 2
             return Repl(repo, config, console, state_dir=args.state_dir, trust_repo_rules=args.trust_repo_rules,
                         verbose=args.verbose).loop()

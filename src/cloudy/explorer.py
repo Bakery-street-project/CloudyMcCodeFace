@@ -375,7 +375,8 @@ def explore(root: str | Path, executor: Executor, registry=None, *, ignore: list
                          or fnmatch(PurePosixPath(f).name, "requirements*.txt")]
     profile.ecosystems = sorted({manifests.get(PurePosixPath(f).name, "pip") for f in profile.manifests})
     profile.ci_files = [f for f in files if any(fnmatch(f, p) for p in CI_PATTERNS)]
-    profile.test_files = [f for f in files if any(fnmatch(PurePosixPath(f).name, p) for p in TEST_PATTERNS)
+    test_patterns = TEST_PATTERNS + (registry.test_patterns() if registry else ())
+    profile.test_files = [f for f in files if any(fnmatch(PurePosixPath(f).name, p) for p in test_patterns)
                           or fnmatch(f, "tests/*.rs")]
     profile.docs = [f for f in files if f.lower().endswith((".md", ".rst"))]
     profile.linters = _linters(root, files)

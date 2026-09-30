@@ -230,6 +230,12 @@ class PhantomCommands(Rule):
                 return f"no Makefile target `{missing[0]}`"
         elif tool == "docker" and args[:1] == ["build"] and not has("Dockerfile"):
             return "no Dockerfile"
+        elif tool == "bundle" and not has("Gemfile"):
+            return "no Gemfile"
+        elif tool == "rake" and not any(has(name) for name in ("Rakefile", "rakefile", "Rakefile.rb")):
+            return "no Rakefile"
+        elif tool == "cmake" and "-S" not in args and "--build" not in args and not has("CMakeLists.txt"):
+            return "no CMakeLists.txt"
         elif tool in ("python", "python3") and args and args[0].endswith(".py") and not has(args[0]):
             return f"{args[0]} does not exist"
         return None

@@ -7,6 +7,7 @@ import pytest
 from cloudy.editor import Editor
 from cloudy.executor import Executor
 from cloudy.explorer import explore
+from cloudy.plugins import load_registry
 from cloudy.rules import RepoContext
 
 REMOTE = "https://github.com/Example-Org/Widget"
@@ -103,5 +104,5 @@ def make_repo(tmp_path):
 def context():
     def factory(root: Path) -> RepoContext:
         executor = Executor(root, timeout=60)
-        return RepoContext(root, explore(root, executor), Editor(root), executor)
+        return RepoContext(root, explore(root, executor, load_registry(root)), Editor(root), executor)
     return factory
