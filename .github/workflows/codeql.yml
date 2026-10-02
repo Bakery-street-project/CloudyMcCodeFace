@@ -19,7 +19,7 @@ jobs:
     name: analyze
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # build-mode none: Python needs no build step. Default query suite (security-extended),
       # matching the probe that verified init+analyze+upload on this Arch runner (run 37042326419).
       # Code scanning DEFAULT SETUP on the repo stays not-configured; SARIF uploads from
