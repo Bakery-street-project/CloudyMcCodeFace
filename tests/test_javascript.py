@@ -83,6 +83,12 @@ def test_interpreters_parse_real_output():
     node = CommandResult("npm run --silent test", 1, "not ok 2 - sub\n  location: 'test/calc.test.js:9:1'\n"
                          "  error: 'Expected values to be strictly equal:\\n\\n8 !== 2\\n'\n# fail 1\n")
     assert interpret_js_test("npm test")(node).details == ["not ok 2 - sub", "test/calc.test.js:9:1"]
+    spec = CommandResult("npm run --silent test", 1,  # node >=25 default spec reporter
+                         "✔ add (1.2ms)\n✖ sub (0.780366ms)\nℹ tests 2\nℹ pass 1\nℹ fail 1\n\n✖ failing tests:\n\n"
+                         "test at test/calc.test.js:9:1\n✖ sub (0.780366ms)\n"
+                         "  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n  \n  8 !== 2\n")
+    assert interpret_js_test("npm test")(spec).details == [
+        "sub", "test/calc.test.js:9:1", "AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:"]
     eslint = CommandResult("eslint", 1, json.dumps([{"filePath": "/r/a.js", "messages": [
         {"line": 1, "ruleId": "no-var", "message": "Unexpected var"}]}]))
     assert interpret_eslint(eslint).details == ["/r/a.js:1 no-var Unexpected var"]
@@ -102,7 +108,9 @@ def test_apply_formats_and_fixes_lint_but_reports_logic_bug(make_repo, tmp_path)
     assert "return a + b;\n}\n" in (root / "src/calc.js").read_text().split("function sub")[1]  # bug untouched
     assert data["status"] == "needs_human"
     test_check = next(c for c in data["verifications"][-1]["checks"] if c["name"] == "npm test")
-    assert "not ok 2 - sub" in test_check["details"] and "test/calc.test.js:9:1" in test_check["details"]
+    # node <25 prints TAP ("not ok 2 - sub"), node >=25 the spec reporter ("sub"); both report the location.
+    assert "test/calc.test.js:9:1" in test_check["details"]
+    assert any("sub" in d for d in test_check["details"])
     again = Orchestrator(root, apply=True, state_dir=tmp_path / "s").run(task).to_dict()
     assert again["edits"] == [] and again["status"] == "needs_human"
 
