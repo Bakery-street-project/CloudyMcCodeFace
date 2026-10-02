@@ -30,5 +30,11 @@ jobs:
       - name: Tests (pytest)
         # Exit code 5 means no tests were collected; treat as success until tests exist.
         # node 22 reference env: newer node switches `node --test` to the spec reporter (FINDING 2).
+        # Coverage is reported for visibility (baseline 92%); no threshold gate yet.
         run: |
-          PATH="$HOME/.local/share/mise/installs/node/22.9.0/bin:$PATH" "${RUNNER_TEMP}/ci-venv/bin/pytest" --tb=short || [ $? -eq 5 ]
+          PATH="$HOME/.local/share/mise/installs/node/22.9.0/bin:$PATH" "${RUNNER_TEMP}/ci-venv/bin/pytest" --tb=short --cov=cloudy --cov-report=term || [ $? -eq 5 ]
+      - name: Dependency audit (pip-audit)
+        # Audits the exact packages the venv resolved; the editable cloudy itself is skipped (not on PyPI), which is expected.
+        run: |
+          "${RUNNER_TEMP}/ci-venv/bin/pip" freeze -q > "${RUNNER_TEMP}/requirements.txt"
+          "${RUNNER_TEMP}/ci-venv/bin/pip-audit" --requirement "${RUNNER_TEMP}/requirements.txt"
