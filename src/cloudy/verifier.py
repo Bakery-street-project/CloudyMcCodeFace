@@ -129,9 +129,12 @@ def match_output(result: CommandResult, name: str, category: str, patterns: list
 JS_TEST_PATTERNS = [re.compile(p) for p in (
     r"^\s*(not ok \d+ - .+)$",  # node:test / TAP
     r"^\s*location: '(.+)'$",
-    r"^\s*(?:FAIL|✕|×)\s+(.+)$",  # jest / vitest
+    # jest / vitest; also node:test spec reporter (node >=25 default), whose header line "✖ failing tests:"
+    # is excluded by the no-trailing-colon group.
+    r"^\s*(?:FAIL|✕|✖|×)\s+(.+?[^:])(?: \(\d[\d.]*m?s\))?$",
+    r"^test at (\S+:\d+:\d+)$",  # spec reporter failure location
     r"^\s*●\s+(.+)$",
-    r"^\s*((?:AssertionError|Error|TypeError|ReferenceError)\b.*)$",
+    r"^\s*((?:AssertionError|SyntaxError|Error|TypeError|ReferenceError)\b.*)$",
     r"^\s*((?:expected|actual|Expected|Received):?\s.*)$",
 )]
 

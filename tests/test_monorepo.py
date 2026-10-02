@@ -51,7 +51,9 @@ def test_polyglot_repo_end_to_end(make_repo, tmp_path):
                                                   "js.eslint-autofix", "go.gofmt", "rust.rustfmt"}
     checks = {c["name"]: c for c in data["verifications"][-1]["checks"]}
     assert "calc_test.go:7: Sub(5, 3) = 8, want 2" in checks["svc: go test"]["details"]
-    assert "not ok 2 - sub" in checks["web: npm test"]["details"]
+    # reporter-agnostic: node <25 TAP and node >=25 spec both surface the failing test and its location
+    assert any(d.endswith("calc.test.js:9:1") for d in checks["web: npm test"]["details"])
+    assert any("sub" in d for d in checks["web: npm test"]["details"])
     assert "tests::subtracts" in checks["cargo test"]["details"]
     assert data["status"] == "needs_human"
     manual = [f["message"] for f in data["findings"] if not f["fixable"]]
