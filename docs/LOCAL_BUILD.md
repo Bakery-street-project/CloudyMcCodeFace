@@ -207,13 +207,32 @@ Runner facts a future operator needs:
 Once the runner listens, push/PR/dispatch runs execute `.github/workflows/ci.yml` (ruff, bandit, pytest
 with coverage, pip-audit).
 
-## Runbook: returning to GitHub-hosted runners
+## CI solution: the self-hosted runner is permanent
 
-Current verified state (2026-10-02): hosted minutes are **still billing-locked**. A throwaway `ubuntu-latest`
-probe (branch `ci/hosted-probe`, since deleted) produced run **37051032502**: job `ping` failed with
-`The job was not started because your account is locked due to a billing issue` and **0 steps executed**.
-CI meanwhile is green on the self-hosted `cloudy-desktop` runner. Do not switch `ci.yml` to hosted before
-step 3 has passed — that is how CI silently dies (0 jobs per run).
+The account cannot resolve the Actions billing lock (owner confirmed), so **hosted minutes are treated as
+unavailable indefinitely and CI is designed to not need them.** The billing lock only stops GitHub-*hosted*
+jobs; it does not touch a self-hosted runner or the free security features a public repository gets. Everything
+this project's CI and compliance issues (#8, #18) require runs without hosted minutes:
+
+| Capability | Where it runs | Hosted-minutes needed? | Verified state |
+|---|---|---|---|
+| ruff, bandit, pytest+coverage, pip-audit | self-hosted `ci.yml` job | No | green (push/PR/dispatch) |
+| CodeQL Python analysis → code scanning | self-hosted workflow (SARIF upload) | No | probe run 37042326419 attempt 2: upload complete, 0 alerts |
+| Secret scanning + push protection | GitHub-side, free on public repos | No | both **enabled**, 0 alerts |
+| Dependabot security updates | GitHub-side | No | enabled |
+
+The runner is a systemd **user** service (`actions-runner.service`, `Restart=always`, `StartLimitIntervalSec=0`,
+enabled, Linger=yes) → it survives logout and reboot and self-heals from crashes, because on this machine it is
+the whole CI. `gh api .../actions/runners` should always show `cloudy-desktop: online`. If CI stops moving, that
+endpoint is the first thing to check, then `systemctl --user status actions-runner`.
+
+## Appendix: returning to GitHub-hosted runners (only if billing is ever fixed)
+
+Skip this entirely unless the account owner later resolves billing. Current verified state (2026-10-02): hosted
+minutes are billing-locked. A throwaway `ubuntu-latest` probe (branch `ci/hosted-probe`, since deleted) produced
+run **37051032502**: job `ping` failed with `The job was not started because your account is locked due to a
+billing issue` and **0 steps executed**. Do not switch `ci.yml` to hosted before the probe in step 2 executes a
+step — that is how CI silently dies (0 jobs per run).
 
 1. **Unlock (owner, browser only — not possible via CLI or API).** As the account that pays (`BoozeLee`):
    github.com → Settings → Billing and plans → fix the payment problem or spending limit that put Actions in
