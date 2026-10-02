@@ -1,0 +1,61 @@
+name: CodeQL — CloudyMcCodeFace
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly deep scan (Mon 06:24 UTC). The desktop runner is a resilient systemd
+    # service (Restart=always, Linger=yes), so scheduled runs fire across reboots.
+    - cron: "24 6 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: analyze
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      # build-mode none: Python needs no build step. Default query suite (security-extended),
+      # matching the probe that verified init+analyze+upload on this Arch runner (run 37042326419).
+      # Code scanning DEFAULT SETUP on the repo stays not-configured; SARIF uploads from
+      # workflows are rejected while it is enabled.
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: python
+          build-mode: none
+      - id: analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:python"
+      # Required-check gate: analyze@v3 passes even when it finds alerts, so fail the job
+      # on any result in the locally written SARIF. Zero findings is the current state of the
+      # tree; a future finding blocks the check and must be triaged (fix, or a reviewed
+      # false-positive dismissal + suite tuning) rather than silently shipped.
+      - name: Fail on CodeQL findings
+        env:
+          SARIF_DIR: ${{ steps.analyze.outputs.sarif-output }}
+        run: |
+          python3 - "$SARIF_DIR" <<'PY'
+          import json, pathlib, sys
+          d = pathlib.Path(sys.argv[1])
+          sarifs = sorted(d.glob("**/*.sarif"))
+          if not sarifs:
+              sys.exit(f"gate error: no SARIF files under {d}")
+          total = 0
+          for p in sarifs:
+              log = json.loads(p.read_text())
+              for run in log.get("runs", []):
+                  for r in run.get("results", []):
+                      total += 1
+                      rule = r.get("ruleId", "?")
+                      loc = (r.get("locations") or [{}])[0]
+                      uri = ((loc.get("physicalLocation") or {}).get("artifactLocation") or {}).get("uri", "?")
+                      print(f"FINDING: {rule} at {uri}")
+          print(f"CodeQL results: {total}")
+          sys.exit(1 if total else 0)
+          PY
