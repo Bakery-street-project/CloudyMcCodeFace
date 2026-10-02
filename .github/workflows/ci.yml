@@ -2,7 +2,7 @@ name: CI — CloudyMcCodeFace
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, claude/project-production-readiness-j70w2y]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
