@@ -17,23 +17,30 @@ jobs:
       - uses: actions/checkout@v4
       # setup-python has no prebuilt CPython for Arch; the runner's system Python (3.11+) is used instead.
       # venv lives in RUNNER_TEMP so bandit -r . never scans it.
+      # Steps are gated on pyproject.toml existing: main is still the pre-cloudy skeleton with no Python
+      # project to check; every branch that carries cloudy code has the file, so the gate never skips real work.
       - name: Install dev tools
+        if: hashFiles('pyproject.toml') != ''
         run: |
           python3 -m venv "${RUNNER_TEMP}/ci-venv"
           "${RUNNER_TEMP}/ci-venv/bin/pip" install --quiet -e ".[dev]"
       - name: Lint (ruff)
+        if: hashFiles('pyproject.toml') != ''
         run: |
           "${RUNNER_TEMP}/ci-venv/bin/ruff" check .
       - name: Security scan (bandit)
+        if: hashFiles('pyproject.toml') != ''
         run: |
           "${RUNNER_TEMP}/ci-venv/bin/bandit" -r . -ll
       - name: Tests (pytest)
+        if: hashFiles('pyproject.toml') != ''
         # Exit code 5 means no tests were collected; treat as success until tests exist.
         # node 22 reference env: newer node switches `node --test` to the spec reporter (FINDING 2).
         # Coverage is reported for visibility (baseline 92%); no threshold gate yet.
         run: |
           PATH="$HOME/.local/share/mise/installs/node/22.9.0/bin:$PATH" "${RUNNER_TEMP}/ci-venv/bin/pytest" --tb=short --cov=cloudy --cov-report=term || [ $? -eq 5 ]
       - name: Dependency audit (pip-audit)
+        if: hashFiles('pyproject.toml') != ''
         # Audits the exact packages the venv resolved; the editable cloudy itself is skipped (not on PyPI), which is expected.
         run: |
           "${RUNNER_TEMP}/ci-venv/bin/pip" freeze -q > "${RUNNER_TEMP}/requirements.txt"
