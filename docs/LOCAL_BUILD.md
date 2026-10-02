@@ -199,6 +199,93 @@ Runner facts a future operator needs:
   `node --test` output to the spec reporter (handled in the verifier since 2026-10).
 - A `run:` line whose value starts with a double quote is invalid YAML in GitHub's parser (silently kills run
   creation and trigger registration) — use block scalars.
-- To move back to hosted minutes once billing is resolved: restore `runs-on: ubuntu-latest` and `actions/setup-python@v5`.
+- Trigger registration quirk: `gh workflow run <file>` and push/PR event matching are resolved against the
+  **default branch's** copy of the workflow; a branch whose `ci.yml` differs from main's can silently get
+  zero runs (observed twice, fixed by aligning main). **All three working branches must carry `ci.yml`
+  byte-identical** (check: `git rev-parse <ref>:.github/workflows/ci.yml` returns the same blob).
 
-Once the runner listens, push/PR/dispatch runs execute `.github/workflows/ci.yml` (ruff, bandit, pytest).
+Once the runner listens, push/PR/dispatch runs execute `.github/workflows/ci.yml` (ruff, bandit, pytest
+with coverage, pip-audit).
+
+## Runbook: returning to GitHub-hosted runners
+
+Current verified state (2026-10-02): hosted minutes are **still billing-locked**. A throwaway `ubuntu-latest`
+probe (branch `ci/hosted-probe`, since deleted) produced run **37051032502**: job `ping` failed with
+`The job was not started because your account is locked due to a billing issue` and **0 steps executed**.
+CI meanwhile is green on the self-hosted `cloudy-desktop` runner. Do not switch `ci.yml` to hosted before
+step 3 has passed — that is how CI silently dies (0 jobs per run).
+
+1. **Unlock (owner, browser only — not possible via CLI or API).** As the account that pays (`BoozeLee`):
+   github.com → Settings → Billing and plans → fix the payment problem or spending limit that put Actions in
+   the locked state. Every hosted job across the account stays dead until this is done.
+2. **Verify the unlock with a probe, not with production CI.** Recreate the throwaway probe: branch off any
+   ref with a one-job workflow (`runs-on: ubuntu-latest`, `on: push: branches: [<probe>]`, one `echo` step,
+   block scalars). Push; expect a run whose step actually **executes**. If it fails with the billing
+   annotation again, stop here — nothing else in this runbook applies yet. Delete the probe branch after.
+3. **Swap `ci.yml` to the hosted variant** below, then apply it to **main, the readiness branch and
+   `feat/local-ai-v2.0` in one sitting** (cherry-picks are fine — byte-identical blobs, verify with
+   `git rev-parse <ref>:.github/workflows/ci.yml` across all three). Main first: trigger registration reads
+   the default branch.
+
+   ```yaml
+   name: CI — CloudyMcCodeFace
+   on:
+     push:
+       branches: [main, master, claude/project-production-readiness-j70w2y]
+     pull_request:
+       branches: [main, master]
+     workflow_dispatch:
+   permissions:
+     contents: read
+   jobs:
+     quality:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: actions/setup-python@v5
+           with:
+             python-version: "3.12"
+         # No RUNNER_TEMP venv here: a fresh hosted checkout has no in-repo .venv, so `bandit -r .` is already
+         # clean and the setup-python interpreter is on PATH — tools are called bare. This is the only structural
+         # difference from the self-hosted variant (which needs a venv outside the tree and node 22 on PATH).
+         - name: Install dev tools
+           if: hashFiles('pyproject.toml') != ''
+           run: |
+             python -m pip install --quiet -e ".[dev]"
+         - name: Lint (ruff)
+           if: hashFiles('pyproject.toml') != ''
+           run: |
+             ruff check .
+         - name: Security scan (bandit)
+           if: hashFiles('pyproject.toml') != ''
+           run: |
+             bandit -r . -ll
+         - name: Tests (pytest)
+           if: hashFiles('pyproject.toml') != ''
+           # Exit code 5 means no tests were collected; treat as success until tests exist.
+           # Coverage is reported for visibility (baseline 92%); no threshold gate yet.
+           run: |
+             pytest --tb=short --cov=cloudy --cov-report=term || [ $? -eq 5 ]
+         - name: Dependency audit (pip-audit)
+           if: hashFiles('pyproject.toml') != ''
+           run: |
+             pip freeze -q > "${RUNNER_TEMP}/requirements.txt"
+             pip-audit --requirement "${RUNNER_TEMP}/requirements.txt"
+   ```
+
+   Pre-validated 2026-10-02 on a clean checkout export (no hosted runner needed for the command shape):
+   ruff clean, `bandit -r . -ll` exit 0, bare `pytest --cov` 196 passed / 92%, pip-audit invocation exit 0
+   (see Wave-2 local run). Node tests are `@needs_node` (skip unless node+npm+eslint+prettier are all on PATH);
+   a bare hosted image has no global eslint/prettier, so those JS tests skip on hosted rather than fail — the
+   Python suite, ruff, bandit and pip-audit still run. If you want them exercised, add an `npm i -g
+   eslint prettier` step (the verifier already parses both TAP and spec-reporter output).
+4. **Watch all three event types go green**: the main push run (skeleton guard must SKIP the steps, job
+   succeeds), a readiness push run (all steps execute), a `pull_request` run on PR #26's head (all steps
+   execute). Any of them showing 0 jobs means step 3's blob-parity rule was broken.
+5. **Keep `cloudy-desktop` in standby** — do not deregister it. The systemd user service is `enabled` with
+   lingering on, so it survives logout and reboot and takes jobs the moment `runs-on` says `self-hosted`
+   again. Billing locks recur (account-level, prepaid-minute exhaustion); the standby runner is the 60-second
+   escape hatch.
+6. **Rollback** = revert the ci.yml swap on all three branches (the self-hosted variant is in git history on
+   every branch; `git revert` the swap commit, don't hand-edit). Verify blob parity again, then one
+   `workflow_dispatch` to confirm the runner picks work up.
