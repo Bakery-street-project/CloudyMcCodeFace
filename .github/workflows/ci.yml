@@ -2,24 +2,28 @@ name: CI — CloudyMcCodeFace
 
 on:
   push:
-    branches: [main, master]
+    branches: [main, master, claude/project-production-readiness-j70w2y]
   pull_request:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      # setup-python has no prebuilt CPython for Arch; the runner's system Python (3.11+) is used instead.
+      # venv lives in RUNNER_TEMP so bandit -r . never scans it.
       - name: Install dev tools
-        run: pip install ruff pytest bandit || true
+        run: python3 -m venv "${RUNNER_TEMP}/ci-venv" && "${RUNNER_TEMP}/ci-venv/bin/pip" install --quiet -e ".[dev]"
       - name: Lint (ruff)
-        run: ruff check . || true
+        run: "${RUNNER_TEMP}/ci-venv/bin/ruff" check .
       - name: Security scan (bandit)
-        run: bandit -r . -ll || true
+        run: "${RUNNER_TEMP}/ci-venv/bin/bandit" -r . -ll
       - name: Tests (pytest)
-        run: pytest --tb=short || true
+        # Exit code 5 means no tests were collected; treat as success until tests exist.
+        # node 22 reference env: newer node switches `node --test` to the spec reporter (FINDING 2).
+        run: PATH="$HOME/.local/share/mise/installs/node/22.9.0/bin:$PATH" "${RUNNER_TEMP}/ci-venv/bin/pytest" --tb=short || [ $? -eq 5 ]
