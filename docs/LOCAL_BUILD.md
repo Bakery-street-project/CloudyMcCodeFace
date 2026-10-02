@@ -63,7 +63,7 @@ cd ~ && git clone https://github.com/Bakery-street-project/CloudyMcCodeFace.git 
 git checkout claude/project-production-readiness-j70w2y
 python3 -m venv .venv && . .venv/bin/activate
 pip install -e ".[dev]"            # needs Python 3.11+; installs rich, PyYAML, textual, pytest, ruff, bandit
-ruff check . && bandit -r . -ll && pytest -q
+ruff check . && bandit -r src tests -ll && pytest -q
 ```
 
 Expect `ruff` to be clean, `bandit` to report no medium or high issues, and `194 passed, 1 skipped`. The skipped
@@ -76,7 +76,7 @@ checkout across both.
 py -3.12 -m venv .venv            # any Python 3.11+
 .\.venv\Scripts\Activate.ps1
 pip install -e ".[dev]"
-ruff check .; bandit -r . -ll; pytest -q
+ruff check .; bandit -r src tests -ll; pytest -q
 agent --version                   # expect 2.0.0
 agent "analyze this repo"         # read-only; expect a summary and exit code 0 or 1
 ```
@@ -172,7 +172,7 @@ Commit on `claude/project-production-readiness-j70w2y`:
 - replacing "it has not been tested on Windows yet" in its Limits section with what you actually verified
 - any real bug fixes, each with its test
 
-Use one commit per kind of change. Before pushing, run `ruff check .`, `bandit -r . -ll` and `pytest -q` (in WSL2),
+Use one commit per kind of change. Before pushing, run `ruff check .`, `bandit -r src tests -ll` and `pytest -q` (in WSL2),
 and ask the user before you push.
 
 Then give a short report:
@@ -184,12 +184,21 @@ Then give a short report:
 - the commit hashes
 - anything you could not do, and why
 
-## Not for Claude Code: GitHub Actions on the repository
+## GitHub Actions on the repository — resolved
 
-Every workflow run fails with `startup_failure` before any job starts, on `main` too, so the cause is not the code.
-The repository owner should check, on GitHub:
+Workflow runs used to fail with `startup_failure` before any job started: the account is locked for
+GitHub-hosted minutes by a billing problem (owner: Settings → Billing & plans; this cannot be fixed from the
+CLI). Since self-hosted jobs are not billed, CI now runs on a self-hosted runner (`cloudy-desktop`) registered
+on the development desktop; `runs-on: self-hosted` in `.github/workflows/ci.yml`.
 
-- **Settings → Actions → General:** Actions must be enabled, and the allowed-actions policy must permit `actions/*`.
-- **Billing & plans:** look for a spending limit that has been used up, or a payment problem.
+Runner facts a future operator needs:
 
-Once Actions can start, the next push runs `.github/workflows/ci.yml` (ruff, bandit, pytest).
+- Built-in `setup-python` has no CPython build for Arch Linux, so the workflow provisions a venv from the
+  system Python into `RUNNER_TEMP` (outside the checkout, so `bandit -r .` never scans it).
+- The runner's PATH must include node 22 (mise), matching the reference environment; newer node switches
+  `node --test` output to the spec reporter (handled in the verifier since 2026-10).
+- A `run:` line whose value starts with a double quote is invalid YAML in GitHub's parser (silently kills run
+  creation and trigger registration) — use block scalars.
+- To move back to hosted minutes once billing is resolved: restore `runs-on: ubuntu-latest` and `actions/setup-python@v5`.
+
+Once the runner listens, push/PR/dispatch runs execute `.github/workflows/ci.yml` (ruff, bandit, pytest).
