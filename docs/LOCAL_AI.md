@@ -90,10 +90,15 @@ load time, median time to first token, median tokens/s (streamed chunks ≈ toke
 
 | Model | Quant | Device | RAM | Load time | First token | Tokens/s |
 |---|---|---|---|---|---|---|
-| 7B coding-instruct | Q5_K_M | CPU only | est. 5–6 GB, to measure | to measure | to measure | to measure |
-| 7B coding-instruct | Q5_K_M | GPU offload | est. 5–6 GB, to measure | to measure | to measure | to measure |
-| 14B coding-instruct | Q4_K_M | CPU only | est. 9–10 GB, to measure | to measure | to measure | to measure |
-| 14B coding-instruct | Q4_K_M | GPU offload (partial) | est. 9–10 GB, to measure | to measure | to measure | to measure |
+| NVIDIA-Nemotron-3-Nano-4B | Q4_K_M | GPU offload (-ngl auto) | 2.9 GB (peak VRAM 3.6 GB) | 6.9 s | 1.64 s | 49.9 |
+| NVIDIA-Nemotron-3-Nano-4B | Q4_K_M | CPU only | 3.8 GB | 3.2 s | 24.06 s | 3.3 |
+| Qwen2.5-Coder-7B-Instruct | Q5_K_M | GPU offload (-ngl auto) | 5.3 GB (peak VRAM 6.2 GB) | 14.4 s | 0.06 s | 28.5 |
+| Qwen2.5-Coder-7B-Instruct | Q5_K_M | CPU only | 5.9 GB | 3.6 s | 0.78 s | 1.4 |
+
+Measured 2026-10-02 on Arch Linux (Python 3.14.5), llama.cpp built from source with `GGML_CUDA=ON`
+(`CMAKE_CUDA_ARCHITECTURES=61`), NVIDIA driver 580.178.04. CPU: 12 cores. GPU: NVIDIA GeForce GTX 1080, 8 GB VRAM.
+Cloudy with no AI configured: `agent "analyze this repo"` completed in 1.14 s wall (full run, not just startup),
+peak RSS including subprocesses 72 MB.
 
 ## Limits
 
