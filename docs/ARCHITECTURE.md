@@ -5,6 +5,19 @@ reproduced: the same repository state and task always produce the same plan, edi
 AI (`ai/`, see [LOCAL_AI.md](LOCAL_AI.md)) sits on top: it can only propose edits, which then pass through the same
 deterministic diff → confirm → apply → verify path.
 
+## The loop
+
+```mermaid
+flowchart LR
+    E[explorer.py<br/>map the repo] --> P[planner.py<br/>intents → ordered fix steps]
+    P --> D[editor.py<br/>whole-file diffs,<br/>validated by ast/tomllib/json/yaml]
+    D -->|plan: shown only| R[report.py / repl.py / tui]
+    D -->|apply: writes| W[(working tree)]
+    W --> V[verifier.py<br/>the project's own ruff/pytest/eslint/…]
+    V -->|passing check broke| RT[revert via state.py]
+    V --> O[orchestrator.py<br/>status: done / needs_human]
+```
+
 ## Decisions
 
 | Decision | Rationale |
