@@ -150,7 +150,8 @@ ruff check . && bandit -r src tests -ll && pytest
 ```
 
 Design, module responsibilities and the complete rule catalogue: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
-Release notes: [CHANGELOG.md](CHANGELOG.md).
+Release notes: [CHANGELOG.md](CHANGELOG.md). Verifying on your own machine (real model, benchmark, Windows):
+[docs/LOCAL_BUILD.md](docs/LOCAL_BUILD.md).
 
 ## License
 
