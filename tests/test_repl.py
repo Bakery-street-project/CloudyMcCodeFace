@@ -1,6 +1,7 @@
 import io
 import re
 import subprocess
+import sys
 
 from conftest import LEGACY_REPO
 from rich.console import Console
@@ -88,3 +89,32 @@ def test_messages_when_nothing_to_do_and_loop_ends_on_eof(make_repo, tmp_path):
     text = out.getvalue()
     assert "Nothing pending" in text and "Nothing to revert" in text and "Nothing applied" in text
     assert "usage: plan <task>" in text and "Commands" in text
+
+
+def test_piped_stdin_terminates_the_prompt_line(make_repo, tmp_path, monkeypatch):
+    root = make_repo({"README.md": "# x\n"})
+    repl, out = make(root, tmp_path, ["quit"])
+    monkeypatch.setattr(sys, "stdin", io.StringIO())  # non-tty: readline callers need complete lines
+    assert repl.loop() == 0
+    assert re.search(r"^cloudy> $", out.getvalue(), re.M)
+
+
+def test_tty_prompt_goes_to_input_only(make_repo, tmp_path, monkeypatch):
+    class TtyStdin(io.StringIO):
+        def isatty(self):
+            return True
+
+    root = make_repo({"README.md": "# x\n"})
+    seen = []
+
+    def input_fn(prompt):
+        seen.append(prompt)
+        raise EOFError
+
+    output = io.StringIO()
+    repl = Repl(root, load_config(root), Console(file=output, width=200, color_system=None),
+                state_dir=tmp_path / "s", input_fn=input_fn)
+    monkeypatch.setattr(sys, "stdin", TtyStdin())
+    assert repl.loop() == 0
+    assert seen == ["cloudy> "]
+    assert "cloudy> " not in output.getvalue()

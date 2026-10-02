@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -62,12 +63,23 @@ class Repl:
         finally:
             self.workbench.close()  # never leave a model engine running
 
+    def _prompt(self) -> str:
+        return f"cloudy{' (pending)' if self.workbench.has_pending() else ''}> "
+
+    def _read_line(self) -> str:
+        prompt = self._prompt()
+        if sys.stdin.isatty():
+            return self.input(prompt)
+        # Piped/automation stdin: readline callers only see complete lines, so terminate the prompt.
+        self.console.print(prompt, markup=False, highlight=False)
+        return self.input("")
+
     def _loop(self) -> int:
         mode = "chat" if self.chat_mode else "interactive mode"
         self.console.print(f"cloudy {mode} in [bold]{escape(str(self.root))}[/]. Type [bold]help[/].")
         while True:
             try:
-                line = self.input(f"cloudy{' (pending)' if self.workbench.has_pending() else ''}> ")
+                line = self._read_line()
             except EOFError:
                 self.console.print()
                 return 0
