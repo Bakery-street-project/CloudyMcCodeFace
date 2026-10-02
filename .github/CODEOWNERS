@@ -1,4 +1,2 @@
-# This is the CODEOWNERS file
-
-# The following user is responsible for code in the repository
-BoozeLee
+# Default owner for everything in the repository
+* @BoozeLee

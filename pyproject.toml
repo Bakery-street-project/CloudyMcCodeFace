@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cloudy"
+dynamic = ["version"]
+description = "Offline, model-free coding agent built from deterministic rules and the repo's own tools"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Bakery Street Project" }]
+dependencies = ["rich>=13", "PyYAML>=6"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: Other/Proprietary License",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Repository = "https://github.com/Bakery-street-project/CloudyMcCodeFace"
+Changelog = "https://github.com/Bakery-street-project/CloudyMcCodeFace/blob/main/CHANGELOG.md"
+
+[project.optional-dependencies]
+tui = ["textual>=8.0"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.5", "bandit>=1.7", "pip-audit>=0.7", "textual>=8.0"]
+
+[project.scripts]
+agent = "cloudy.cli:main"
+cloudy = "cloudy.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "cloudy.__version__" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
