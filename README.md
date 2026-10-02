@@ -1,5 +1,7 @@
 # cloudy
 
+[![CI](https://github.com/Bakery-street-project/CloudyMcCodeFace/actions/workflows/ci.yml/badge.svg)](https://github.com/Bakery-street-project/CloudyMcCodeFace/actions/workflows/ci.yml)
+
 **An offline, deterministic coding agent.** cloudy explores a repository, plans small fixes, shows you the diffs,
 applies them only when you say so, re-runs the project's own checks and tells you exactly what is left for a human.
 It is part of the CloudyMcCodeFace project.
@@ -144,7 +146,7 @@ them runs their code. The full interface is in [docs/ARCHITECTURE.md](docs/ARCHI
 
 ```bash
 pip install -e ".[dev]"
-ruff check . && bandit -r . -ll && pytest
+ruff check . && bandit -r src tests -ll && pytest
 ```
 
 Design, module responsibilities and the complete rule catalogue: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
