@@ -24,12 +24,12 @@ jobs:
       # matching the probe that verified init+analyze+upload on this Arch runner (run 37042326419).
       # Code scanning DEFAULT SETUP on the repo stays not-configured; SARIF uploads from
       # workflows are rejected while it is enabled.
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: python
           build-mode: none
       - id: analyze
-        uses: github/codeql-action/analyze@v3
+        uses: github/codeql-action/analyze@v4
         with:
           category: "/language:python"
       # Required-check gate: analyze@v3 passes even when it finds alerts, so fail the job
