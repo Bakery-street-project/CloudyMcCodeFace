@@ -64,6 +64,9 @@ class Engine:
                 "-c", str(self.config["context"]), "-ngl", str(self.config["gpu_layers"]), "-np", "1", "--offline"]
         if self.config["threads"]:
             argv += ["-t", str(self.config["threads"])]
+        if self.config["cpu_moe_layers"]:
+            # --no-mmap: llama-server itself warns that mmap + CPU tensor overrides is slow
+            argv += ["-ncmoe", str(self.config["cpu_moe_layers"]), "--no-mmap"]
         return argv
 
     def start(self) -> str:

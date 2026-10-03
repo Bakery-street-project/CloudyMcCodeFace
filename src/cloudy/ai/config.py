@@ -15,6 +15,7 @@ AI_DEFAULTS: dict = {
     "endpoint": "",  # optional: an already running llama-server on loopback, e.g. http://127.0.0.1:8080
     "context": 8192,  # context window in tokens
     "gpu_layers": "auto",  # llama-server -ngl: an integer, "auto" or "all"
+    "cpu_moe_layers": 0,  # llama-server -ncmoe: keep this many MoE expert layers on CPU; 0 = let the engine place them
     "threads": 0,  # CPU threads; 0 lets the engine decide
     "seed": 42,  # fixed seed; temperature is always 0
     "max_steps": 6,  # tool calls per question
@@ -63,7 +64,10 @@ def load_ai_config(path: Path | None = None) -> dict | None:
     for key in ("engine", "model", "deep_model", "endpoint"):
         if not isinstance(config[key], str):
             fail(f"{key} must be a string")
-    for key, low in (("context", 512), ("threads", 0), ("seed", 0), ("max_steps", 1), ("max_tokens", 16)):
+    for key, low in (
+        ("context", 512), ("threads", 0), ("cpu_moe_layers", 0), ("seed", 0),
+        ("max_steps", 1), ("max_tokens", 16),
+    ):
         if not isinstance(config[key], int) or isinstance(config[key], bool) or config[key] < low:
             fail(f"{key} must be an integer ≥ {low}")
     for key in ("load_timeout", "request_timeout", "max_model_gb"):

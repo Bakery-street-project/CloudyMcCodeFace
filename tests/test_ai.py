@@ -91,10 +91,16 @@ def test_config_is_optional_and_validated(tmp_path):
                           ('[ai]\nendpoint = "http://user@127.0.0.1:1"\n', "never uses remote models"),
                           ('[ai]\nmodel = "/m.gguf"\n', "set engine and model"),
                           ('[ai]\nendpoint = "http://127.0.0.1:1"\ncolour = 1\n', r"unknown \[ai\] key"),
-                          ('[ai]\nendpoint = "http://127.0.0.1:1"\ngpu_layers = "max"\n', "gpu_layers")):
+                          ('[ai]\nendpoint = "http://127.0.0.1:1"\ngpu_layers = "max"\n', "gpu_layers"),
+                          ('[ai]\nendpoint = "http://127.0.0.1:1"\ncpu_moe_layers = -1\n', "cpu_moe_layers"),
+                          ('[ai]\nendpoint = "http://127.0.0.1:1"\ncpu_moe_layers = true\n', "cpu_moe_layers")):
         path.write_text(body)
         with pytest.raises(AIConfigError, match=message):
             load_ai_config(path)
+    path.write_text('[ai]\nendpoint = "http://127.0.0.1:1"\ncpu_moe_layers = 3\n')
+    assert load_ai_config(path)["cpu_moe_layers"] == 3
+    path.write_text('[ai]\nendpoint = "http://127.0.0.1:1"\n')
+    assert load_ai_config(path)["cpu_moe_layers"] == 0
 
 
 def test_ai_settings_are_refused_in_a_repository(make_repo, tmp_path):
@@ -102,6 +108,14 @@ def test_ai_settings_are_refused_in_a_repository(make_repo, tmp_path):
     assert load_ai_config() is None  # conftest points XDG_CONFIG_HOME at an empty directory
     with pytest.raises(ConfigError, match="belong in your user config"):
         load_config(root)
+
+
+def test_cpu_moe_layers_adds_ncmoe_and_no_mmap_to_argv_and_stays_out_when_unset():
+    argv = Engine(ai_config("e", "m", cpu_moe_layers=5)).argv(1234)
+    assert argv[argv.index("-ncmoe") + 1] == "5"
+    assert "--no-mmap" in argv
+    plain = Engine(ai_config("e", "m")).argv(1234)
+    assert "-ncmoe" not in plain and "--no-mmap" not in plain
 
 
 # ---- engine and client -------------------------------------------------------------------------------------------
