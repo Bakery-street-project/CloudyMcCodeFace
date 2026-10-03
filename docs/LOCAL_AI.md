@@ -30,6 +30,7 @@ engine = '~/llama.cpp/build/bin/llama-server'   # Windows: 'C:\llama.cpp\llama-s
 model = '~/models/coder-7b-instruct-Q5_K_M.gguf'
 deep_model = '~/models/coder-14b-instruct-Q4_K_M.gguf'   # optional, used with --deep
 gpu_layers = "auto"        # -ngl: "auto", "all" or a number; 0 = CPU only
+cpu_moe_layers = 0         # -ncmoe + --no-mmap: for MoE models, keep N expert layers on CPU (faster when the model exceeds VRAM); 0 = engine default
 context = 8192             # tokens
 threads = 0                # 0 = let the engine decide
 seed = 42                  # temperature is always 0
